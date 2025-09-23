@@ -12,6 +12,36 @@ Write-Host "📁 Executando a partir de: $projectRoot" -ForegroundColor Cyan
 # Importar função para criar Secret a partir do .env
 . "$PSScriptRoot\create-secret.ps1"
 
+# Verificar se Minikube está rodando
+Write-Host "🐳 VERIFICANDO MINIKUBE..." -ForegroundColor Cyan
+Write-Host "-" * 30
+
+$minikubeStatus = minikube status 2>$null
+if ($LASTEXITCODE -ne 0 -or $minikubeStatus -notmatch "Running") {
+    Write-Host "⚠️  Minikube não está rodando. Iniciando..." -ForegroundColor Yellow
+    try {
+        minikube start --cpus=2 --memory=4096 --driver=docker
+        if ($LASTEXITCODE -ne 0) {
+            throw "Falha ao iniciar Minikube"
+        }
+        Write-Host "✅ Minikube iniciado com sucesso!" -ForegroundColor Green
+        
+        # Habilitar metrics-server se necessário
+        Write-Host "📊 Habilitando metrics-server..." -ForegroundColor Yellow
+        minikube addons enable metrics-server
+        Write-Host "⏳ Aguardando metrics-server..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+        
+    } catch {
+        Write-Host "❌ Falha ao iniciar Minikube: $_" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "✅ Minikube já está rodando!" -ForegroundColor Green
+}
+
+Write-Host ""
+
 # Verificar se arquivo .env existe (na raiz)
 if (-not (Test-Path ".env")) {
     Write-Host "❌ Arquivo .env não encontrado na raiz!" -ForegroundColor Red
