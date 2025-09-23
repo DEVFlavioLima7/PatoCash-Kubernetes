@@ -24,7 +24,7 @@ cd PatoCash-Kubernetes
 - ✅ **Auto-healing**: Recuperação automática de falhas
 - ✅ **HPA**: Escalonamento baseado em CPU (70%)
 - ✅ **Segurança**: Secrets dinâmicos do .env
-- ✅ **Multi-pods**: Frontend (2) + Backend (2-6)
+- ✅ **Multi-pods**: Frontend (2) + Backend (1-5)
 - ✅ **Testes**: Automatizados de resiliência
 
 ## 📁 **Estrutura do Projeto**
@@ -78,7 +78,7 @@ notepad .env  # Editar com suas credenciais
 │   FRONTEND      │    │    BACKEND      │    │   POSTGRESQL    │
 │   (Node.js)     │    │    (Flask)      │    │   (Database)    │
 │                 │    │                 │    │                 │
-│ • 2 réplicas    │◄──►│ • 2-6 réplicas  │◄──►│ • 1 instância   │
+│ • 2 réplicas    │◄──►│ • 1-5 réplicas  │◄──►│ • 1 instância   │
 │ • Port 3000     │    │ • Auto-scaling  │    │ • Volume persist│
 │ • LoadBalancer  │    │ • Health checks │    │ • Init scripts  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
