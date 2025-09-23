@@ -87,8 +87,8 @@ notepad .env  # Editar com suas credenciais
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   CONFIGMAP     │    │      HPA        │    │    SECRETS      │
 │ • Configurações │    │ • CPU: 70%      │    │ • Credenciais   │
-│ • Não sensível  │    │ • Min: 2 pods   │    │ • Criptografado │
-│                 │    │ • Max: 6 pods   │    │ • .env dinâmico │
+│ • Não sensível  │    │ • Min: 1 pods   │    │ • Criptografado │
+│                 │    │ • Max: 5 pods   │    │ • .env dinâmico │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
