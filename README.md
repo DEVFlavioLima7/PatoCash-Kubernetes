@@ -102,7 +102,7 @@ notepad .env  # Editar com suas credenciais
 
 ### **HPA (Escalonamento Horizontal)**
 - 🔥 Gera stress de CPU (>70%)
-- 📈 HPA cria novos pods (2 → 6)
+- 📈 HPA cria novos pods (1 → 5)
 - ⏱️ Reação em 1-3 minutos
 - 📉 Redução automática após estabilização
 
@@ -135,14 +135,13 @@ kubectl logs -l app=patocast-backend
 ## 🌐 **Endpoints**
 
 - **Frontend**: http://localhost:3000
-- **API Backend**: http://localhost:3000/api/*
-- **Health Check**: http://localhost:3000/health
+- **API Backend**: http://localhost:5000/
 - **Rota de Teste**: http://localhost:3000/save_conta
 
 ## 🚀 **Recursos Kubernetes**
 
 ### **Deployments**
-- **Backend**: 2-6 pods (auto-scaling)
+- **Backend**: 1-5 pods (auto-scaling)
 - **Frontend**: 2 pods (fixo)
 - **PostgreSQL**: 1 pod (persistente)
 
@@ -154,7 +153,7 @@ kubectl logs -l app=patocast-backend
 ### **HPA (Horizontal Pod Autoscaler)**
 - **Threshold**: 70% CPU
 - **Min Replicas**: 2
-- **Max Replicas**: 6
+- **Max Replicas**: 5
 - **Scale-up**: 1-3 minutos
 - **Scale-down**: 5-10 minutos
 
@@ -174,7 +173,7 @@ kubectl logs -l app=patocast-backend
 
 ### **HPA**
 - 📊 Threshold: 70% CPU
-- ⚖️ Escala: 2 → 6 pods máximo
+- ⚖️ Escala: 1 → 5 pods máximo
 - ⏱️ Tempo reação: 1-3 minutos
 - 📉 Redução: 5-10 minutos após stress
 
