@@ -1,23 +1,26 @@
-# 🧪 Teste Completo do Zero - PatoCash
-# Este script simula uma instalação completamente nova em qualquer PC
+# 🧪 Teste Completo do Zero - PatoCash Kubernetes
+# Este script faz limpeza COMPLETA e instalação do zero em qualquer PC
 
 param(
     [switch]$LimparTudo,
     [switch]$SemPrompt
 )
 
-Write-Host "🧪 TESTE COMPLETO DO ZERO - PATOCASH" -ForegroundColor Green
-Write-Host "=" * 50
-Write-Host "🎯 Objetivo: Simular instalação em PC novo" -ForegroundColor Cyan
-Write-Host "📋 Este teste vai:" -ForegroundColor Yellow
-Write-Host "   ✅ Limpar todo o ambiente atual" -ForegroundColor Yellow
-Write-Host "   ✅ Verificar pré-requisitos" -ForegroundColor Yellow
-Write-Host "   ✅ Fazer deploy completo do zero" -ForegroundColor Yellow
-Write-Host "   ✅ Testar funcionalidades" -ForegroundColor Yellow
+Write-Host "🧪 TESTE COMPLETO DO ZERO - PATOCASH KUBERNETES" -ForegroundColor Green
+Write-Host "=" * 60
+Write-Host "🎯 Objetivo: Instalação 100% limpa em qualquer PC" -ForegroundColor Cyan
+Write-Host "🧹 Este script vai:" -ForegroundColor Yellow
+Write-Host "   💥 DELETAR completamente instalação anterior" -ForegroundColor Yellow
+Write-Host "   🔍 Verificar todos os pré-requisitos" -ForegroundColor Yellow
+Write-Host "   🚀 Deploy completo do zero com nova estrutura" -ForegroundColor Yellow
+Write-Host "   🧪 Testar todas as funcionalidades" -ForegroundColor Yellow
+Write-Host "   🌐 Configurar acesso automático" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "⚠️  ATENÇÃO: Limpeza TOTAL do ambiente!" -ForegroundColor Red
 Write-Host ""
 
 if (-not $SemPrompt) {
-    $confirmacao = Read-Host "🚨 ATENÇÃO: Isso vai APAGAR todos os recursos atuais! Continuar? (s/N)"
+    $confirmacao = Read-Host "🚨 Isso vai APAGAR 100% da instalação atual! Continuar? (s/N)"
     if ($confirmacao -ne 's' -and $confirmacao -ne 'S') {
         Write-Host "❌ Teste cancelado pelo usuário" -ForegroundColor Red
         exit 0
@@ -73,16 +76,16 @@ function Test-Prerequisites {
         $prerequisites += "Minikube"
     }
     
-    # Verificar arquivos do projeto
+    # Verificar arquivos do projeto (nova estrutura)
     $requiredFiles = @(
-        "deploy-seguro.ps1",
-        "create-secret.ps1", 
-        ".env-exemplo-seguro",
-        "k8s-backend.yaml",
-        "k8s-frontend.yaml",
-        "k8s-postgres.yaml",
-        "k8s-configmap.yaml",
-        "k8s-hpa.yaml",
+        "scripts\deployment\deploy-seguro.ps1",
+        "scripts\deployment\create-secret.ps1", 
+        "kubernetes\configs\.env-exemplo",
+        "kubernetes\manifests\k8s-backend.yaml",
+        "kubernetes\manifests\k8s-frontend.yaml",
+        "kubernetes\manifests\k8s-postgres.yaml",
+        "kubernetes\manifests\k8s-configmap.yaml",
+        "kubernetes\manifests\k8s-hpa.yaml",
         "banco_de_dados\init.sql",
         "banco_de_dados\insersao_user.sql"
     )
@@ -114,45 +117,78 @@ function Test-Prerequisites {
     return $true
 }
 
-# Função para limpar ambiente
+# Função para limpeza COMPLETA do ambiente
 function Clear-Environment {
-    Write-Host "🧹 LIMPANDO AMBIENTE ATUAL..." -ForegroundColor Yellow
-    Write-Host "-" * 40
+    Write-Host "🧹 LIMPEZA COMPLETA DO AMBIENTE..." -ForegroundColor Red
+    Write-Host "-" * 50
     
-    # Parar port-forwards
-    Write-Host "🔌 Matando port-forwards ativos..." -ForegroundColor Cyan
-    Get-Process | Where-Object { $_.ProcessName -eq "kubectl" } | ForEach-Object {
+    # 1. Parar TODOS os port-forwards
+    Write-Host "🔌 Matando TODOS os port-forwards e processos kubectl..." -ForegroundColor Cyan
+    Get-Process | Where-Object { 
+        $_.ProcessName -eq "kubectl" -or 
+        $_.ProcessName -eq "minikube" -or
+        $_.MainWindowTitle -like "*port-forward*"
+    } | ForEach-Object {
         try {
             $_.Kill()
-            Write-Host "✅ Processo kubectl $($_.Id) terminado" -ForegroundColor Green
+            Write-Host "✅ Processo $($_.ProcessName) $($_.Id) terminado" -ForegroundColor Green
         } catch {
             Write-Host "⚠️  Processo $($_.Id) já terminado" -ForegroundColor Yellow
         }
     }
     
-    # Deletar recursos do Kubernetes
-    Write-Host "🗑️  Removendo recursos do Kubernetes..." -ForegroundColor Cyan
+    # 2. Deletar TODOS os recursos do namespace default
+    Write-Host "🗑️  Removendo TODOS os recursos do Kubernetes..." -ForegroundColor Cyan
     
-    $resources = @(
-        "hpa patocast-hpa",
-        "deployment patocast-backend patocast-frontend postgres",
-        "service patocast-backend-service patocast-frontend-service postgres-service",
-        "configmap patocast-config postgres-init-scripts",
-        "secret patocast-secrets"
+    # Deletar por tipo específico
+    $resourceTypes = @(
+        "hpa",
+        "deployment", 
+        "service",
+        "configmap",
+        "secret",
+        "pod",
+        "replicaset"
     )
     
-    foreach ($resource in $resources) {
-        Write-Host "🗑️  kubectl delete $resource" -ForegroundColor Gray
-        kubectl delete $resource --ignore-not-found=true 2>$null | Out-Null
+    foreach ($type in $resourceTypes) {
+        Write-Host "🗑️  Removendo todos os $type..." -ForegroundColor Gray
+        kubectl delete $type --all --ignore-not-found=true 2>$null | Out-Null
     }
     
-    # Remover arquivo .env se existir
+    # 3. Aguardar tudo ser removido
+    Write-Host "⏳ Aguardando remoção completa..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+    
+    # 4. Verificar se ainda há pods rodando
+    $remainingPods = kubectl get pods --no-headers 2>$null
+    if ($remainingPods) {
+        Write-Host "� Forçando remoção de pods restantes..." -ForegroundColor Red
+        kubectl delete pods --all --force --grace-period=0 2>$null | Out-Null
+    }
+    
+    # 5. Resetar Minikube completamente
+    Write-Host "💥 RESETANDO Minikube completamente..." -ForegroundColor Red
+    minikube delete 2>$null | Out-Null
+    
+    # 6. Limpar arquivos locais
+    Write-Host "🗑️  Removendo arquivos temporários..." -ForegroundColor Cyan
     if (Test-Path ".env") {
-        Write-Host "🗑️  Removendo .env atual..." -ForegroundColor Cyan
         Remove-Item ".env" -Force
+        Write-Host "✅ .env removido" -ForegroundColor Green
     }
     
-    Write-Host "✅ Ambiente limpo!" -ForegroundColor Green
+    # Remover logs e caches
+    $tempPaths = @("*.log", "*.tmp", ".kubectl_cache")
+    foreach ($path in $tempPaths) {
+        if (Test-Path $path) {
+            Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
+    Write-Host ""
+    Write-Host "✅ LIMPEZA COMPLETA FINALIZADA!" -ForegroundColor Green
+    Write-Host "💯 Ambiente 100% limpo para nova instalação" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -204,13 +240,16 @@ function Create-TestEnv {
     Write-Host "🔐 CRIANDO ARQUIVO .ENV DE TESTE..." -ForegroundColor Cyan
     Write-Host "-" * 40
     
-    if (-not (Test-Path ".env-exemplo-seguro")) {
-        Write-Host "❌ Arquivo .env-exemplo-seguro não encontrado!" -ForegroundColor Red
+    # Verificar arquivo de exemplo na nova estrutura
+    $envExemplo = "kubernetes\configs\.env-exemplo"
+    if (-not (Test-Path $envExemplo)) {
+        Write-Host "❌ Arquivo $envExemplo não encontrado!" -ForegroundColor Red
+        Write-Host "📁 Estrutura esperada: kubernetes/configs/.env-exemplo" -ForegroundColor Yellow
         return $false
     }
     
-    # Copiar exemplo para .env
-    Copy-Item ".env-exemplo-seguro" ".env"
+    # Copiar exemplo para .env na raiz
+    Copy-Item $envExemplo ".env"
     Write-Host "✅ Arquivo .env criado a partir do exemplo" -ForegroundColor Green
     
     # Mostrar conteúdo
@@ -219,6 +258,7 @@ function Create-TestEnv {
     
     Write-Host ""
     Write-Host "⚠️  IMPORTANTE: Em produção, use credenciais reais!" -ForegroundColor Yellow
+    Write-Host "📁 Arquivo criado na raiz para os scripts funcionarem" -ForegroundColor Cyan
     Write-Host ""
     
     return $true
@@ -285,17 +325,24 @@ if (-not (Create-TestEnv)) {
     exit 1
 }
 
-# 5. Executar deploy seguro
+# 5. Executar deploy seguro (nova estrutura)
 Write-Host "🚀 EXECUTANDO DEPLOY SEGURO..." -ForegroundColor Green
 Write-Host "-" * 40
 try {
-    & ".\deploy-seguro.ps1"
+    # Executar script da nova localização
+    & ".\scripts\deployment\deploy-seguro.ps1"
     if ($LASTEXITCODE -ne 0) {
         throw "Deploy falhou"
     }
     Write-Host "✅ Deploy executado com sucesso!" -ForegroundColor Green
 } catch {
     Write-Host "❌ Falha no deploy: $_" -ForegroundColor Red
+    Write-Host "📁 Verificando se script existe na nova estrutura..." -ForegroundColor Yellow
+    if (Test-Path ".\scripts\deployment\deploy-seguro.ps1") {
+        Write-Host "✅ Script encontrado: .\scripts\deployment\deploy-seguro.ps1" -ForegroundColor Green
+    } else {
+        Write-Host "❌ Script não encontrado na nova estrutura!" -ForegroundColor Red
+    }
     exit 1
 }
 
