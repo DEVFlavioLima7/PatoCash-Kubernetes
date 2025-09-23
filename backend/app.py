@@ -10,6 +10,7 @@ from src.routes.card_roules import card_routes
 from src.routes.email_routes import email_routes
 from src.routes.form_routes import form_routes
 from src.routes.posso_ajudar import posso_ajudar_routes
+from prometheus_client import generate_latest, Counter
 
 rout_teste = Blueprint('route', __name__)
 @rout_teste.route('/', methods=['GET'])
@@ -17,6 +18,10 @@ def teste():
     return "Hello World"
 
 app = Flask(__name__)
+
+@app.route("/metrics")
+def metrics():
+    return generate_latest(), 200, {"Content-Type": "text/plain"}
 
 app.register_blueprint(rout_teste)
 app.register_blueprint(router_user)

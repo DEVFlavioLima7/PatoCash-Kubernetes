@@ -41,14 +41,16 @@ Write-Host "🔍 Verificando status dos pods..." -ForegroundColor Cyan
 kubectl get pods -l app=patocast-frontend
 kubectl get pods -l app=patocast-backend
 
-Write-Host ""
-Write-Host "🚀 Iniciando port-forward..." -ForegroundColor Green
-Write-Host "Pressione Ctrl+C para parar o port-forward" -ForegroundColor Yellow
-Write-Host ""
-
-# Executar port-forward (bloqueia o terminal)
+# Executar port-forward (em paralelo)
 Write-Host "🌐 Aplicação disponível em: http://localhost:3000" -ForegroundColor Green
 Write-Host "🔗 Para testar cadastro: http://localhost:3000/save_conta" -ForegroundColor Cyan
 Write-Host ""
 
-kubectl port-forward service/patocast-frontend-service 3000:3000
+# Iniciar port-forward para frontend
+Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-frontend-service 3000:3000" -WindowStyle Hidden
+
+# Iniciar port-forward para backend
+Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-backend-service 5000:5000" -WindowStyle Hidden
+
+Write-Host "🚀 Port-forwards iniciados em background. Pressione qualquer tecla para sair." -ForegroundColor Green
+[void][System.Console]::ReadKey($true)
