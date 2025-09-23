@@ -12,7 +12,8 @@ Write-Host "🎯 Objetivo: Instalação 100% limpa em qualquer PC" -ForegroundCo
 Write-Host "🧹 Este script vai:" -ForegroundColor Yellow
 Write-Host "   💥 DELETAR completamente instalação anterior" -ForegroundColor Yellow
 Write-Host "   🔍 Verificar todos os pré-requisitos" -ForegroundColor Yellow
-Write-Host "   🚀 Deploy completo do zero com nova estrutura" -ForegroundColor Yellow
+Write-Host "   � Construir imagens Docker automaticamente" -ForegroundColor Yellow
+Write-Host "   �🚀 Deploy completo do zero com nova estrutura" -ForegroundColor Yellow
 Write-Host "   🧪 Testar todas as funcionalidades" -ForegroundColor Yellow
 Write-Host "   🌐 Configurar acesso automático" -ForegroundColor Yellow
 Write-Host ""
@@ -80,14 +81,15 @@ function Test-Prerequisites {
     $requiredFiles = @(
         "scripts\deployment\deploy-seguro.ps1",
         "scripts\deployment\create-secret.ps1", 
-        "kubernetes\configs\.env-exemplo",
         "kubernetes\manifests\k8s-backend.yaml",
         "kubernetes\manifests\k8s-frontend.yaml",
         "kubernetes\manifests\k8s-postgres.yaml",
         "kubernetes\manifests\k8s-configmap.yaml",
         "kubernetes\manifests\k8s-hpa.yaml",
         "banco_de_dados\init.sql",
-        "banco_de_dados\insersao_user.sql"
+        "banco_de_dados\insersao_user.sql",
+        "backend\dockerfile",
+        "front\dockerfile"
     )
     
     Write-Host ""
@@ -171,14 +173,10 @@ function Clear-Environment {
     Write-Host "💥 RESETANDO Minikube completamente..." -ForegroundColor Red
     minikube delete 2>$null | Out-Null
     
-    # 6. Limpar arquivos locais
+    # 6. Limpar arquivos temporários (preservar .env)
     Write-Host "🗑️  Removendo arquivos temporários..." -ForegroundColor Cyan
-    if (Test-Path ".env") {
-        Remove-Item ".env" -Force
-        Write-Host "✅ .env removido" -ForegroundColor Green
-    }
     
-    # Remover logs e caches
+    # Remover logs e caches (mas preservar o .env)
     $tempPaths = @("*.log", "*.tmp", ".kubectl_cache")
     foreach ($path in $tempPaths) {
         if (Test-Path $path) {
@@ -235,30 +233,84 @@ function Test-MinikubeCluster {
     }
 }
 
-# Função para criar .env
-function Create-TestEnv {
-    Write-Host "🔐 CRIANDO ARQUIVO .ENV DE TESTE..." -ForegroundColor Cyan
+# Função para construir imagens Docker
+function Build-DockerImages {
+    Write-Host "🐳 CONSTRUINDO IMAGENS DOCKER..." -ForegroundColor Cyan
     Write-Host "-" * 40
     
-    # Verificar arquivo de exemplo na nova estrutura
-    $envExemplo = "kubernetes\configs\.env-exemplo"
-    if (-not (Test-Path $envExemplo)) {
-        Write-Host "❌ Arquivo $envExemplo não encontrado!" -ForegroundColor Red
-        Write-Host "📁 Estrutura esperada: kubernetes/configs/.env-exemplo" -ForegroundColor Yellow
+    # Configurar Docker para usar o daemon do Minikube
+    Write-Host "🔧 Configurando Docker para usar daemon do Minikube..." -ForegroundColor Yellow
+    try {
+        minikube -p minikube docker-env --shell powershell | Invoke-Expression
+        Write-Host "✅ Docker configurado para Minikube" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ Falha ao configurar Docker: $_" -ForegroundColor Red
         return $false
     }
     
-    # Copiar exemplo para .env na raiz
-    Copy-Item $envExemplo ".env"
-    Write-Host "✅ Arquivo .env criado a partir do exemplo" -ForegroundColor Green
+    # Verificar se os Dockerfiles existem
+    $dockerfiles = @(
+        @{ Path = "backend\dockerfile"; Image = "patocast-backend:latest"; Context = ".\backend" },
+        @{ Path = "front\dockerfile"; Image = "patocast-frontend:latest"; Context = ".\front" }
+    )
     
-    # Mostrar conteúdo
-    Write-Host "📋 Conteúdo do .env:" -ForegroundColor Yellow
-    Get-Content ".env" | ForEach-Object { Write-Host "   $_" -ForegroundColor Gray }
+    foreach ($dockerfile in $dockerfiles) {
+        if (-not (Test-Path $dockerfile.Path)) {
+            Write-Host "❌ Dockerfile não encontrado: $($dockerfile.Path)" -ForegroundColor Red
+            return $false
+        }
+    }
+    
+    # Baixar imagem base do PostgreSQL
+    Write-Host "🗃️  Baixando imagem base do PostgreSQL..." -ForegroundColor Yellow
+    try {
+        docker pull postgres:16-alpine
+        if ($LASTEXITCODE -ne 0) {
+            throw "Falha ao baixar postgres:16-alpine"
+        }
+        Write-Host "✅ Imagem PostgreSQL baixada: postgres:16-alpine" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ Falha ao baixar PostgreSQL: $_" -ForegroundColor Red
+        return $false
+    }
+    
+    # Construir imagem do backend
+    Write-Host "🏗️  Construindo imagem do backend..." -ForegroundColor Yellow
+    try {
+        docker build -t patocast-backend:latest .\backend
+        if ($LASTEXITCODE -ne 0) {
+            throw "Build do backend falhou"
+        }
+        Write-Host "✅ Imagem do backend construída: patocast-backend:latest" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ Falha na construção do backend: $_" -ForegroundColor Red
+        return $false
+    }
+    
+    # Construir imagem do frontend
+    Write-Host "🏗️  Construindo imagem do frontend..." -ForegroundColor Yellow
+    try {
+        docker build -t patocast-frontend:latest .\front
+        if ($LASTEXITCODE -ne 0) {
+            throw "Build do frontend falhou"
+        }
+        Write-Host "✅ Imagem do frontend construída: patocast-frontend:latest" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ Falha na construção do frontend: $_" -ForegroundColor Red
+        return $false
+    }
+    
+    # Verificar imagens criadas
+    Write-Host ""
+    Write-Host "📋 IMAGENS DOCKER DISPONÍVEIS:" -ForegroundColor Green
+    Write-Host "✅ postgres:16-alpine (oficial)" -ForegroundColor Green
+    docker images | grep patocast | ForEach-Object { 
+        Write-Host "✅ $_" -ForegroundColor Green 
+    }
     
     Write-Host ""
-    Write-Host "⚠️  IMPORTANTE: Em produção, use credenciais reais!" -ForegroundColor Yellow
-    Write-Host "📁 Arquivo criado na raiz para os scripts funcionarem" -ForegroundColor Cyan
+    Write-Host "🎉 TODAS AS IMAGENS PRONTAS PARA USO!" -ForegroundColor Green
+    Write-Host "💡 Imagens estão disponíveis no daemon do Minikube" -ForegroundColor Cyan
     Write-Host ""
     
     return $true
@@ -320,12 +372,20 @@ if (-not (Test-MinikubeCluster)) {
     exit 1
 }
 
-# 4. Criar arquivo .env
-if (-not (Create-TestEnv)) {
+# 4. Verificar arquivo .env existente
+if (-not (Test-Path ".env")) {
+    Write-Host "❌ Arquivo .env não encontrado na raiz!" -ForegroundColor Red
+    Write-Host "📁 Certifique-se de que o arquivo .env existe e está configurado" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "✅ Arquivo .env encontrado" -ForegroundColor Green
+
+# 5. Construir imagens Docker
+if (-not (Build-DockerImages)) {
     exit 1
 }
 
-# 5. Executar deploy seguro (nova estrutura)
+# 6. Executar deploy seguro (nova estrutura)
 Write-Host "🚀 EXECUTANDO DEPLOY SEGURO..." -ForegroundColor Green
 Write-Host "-" * 40
 try {
@@ -346,7 +406,7 @@ try {
     exit 1
 }
 
-# 6. Testar aplicação
+# 7. Testar aplicação
 Test-Application
 
 # 7. Resultado final
@@ -355,11 +415,12 @@ Write-Host "🎉 TESTE COMPLETO DO ZERO - CONCLUÍDO!" -ForegroundColor Green
 Write-Host "=" * 50
 Write-Host "✅ Ambiente limpo e recriado" -ForegroundColor Green
 Write-Host "✅ Minikube verificado/iniciado" -ForegroundColor Green
-Write-Host "✅ Arquivo .env criado" -ForegroundColor Green
+Write-Host "✅ Arquivo .env verificado" -ForegroundColor Green
+Write-Host "✅ Imagens Docker construídas" -ForegroundColor Green
 Write-Host "✅ Deploy seguro executado" -ForegroundColor Green
 Write-Host "✅ Aplicação testada" -ForegroundColor Green
 Write-Host ""
 Write-Host "🌐 Acesse a aplicação em: http://localhost:3000" -ForegroundColor Cyan
-Write-Host "🧪 Para testes de resiliência: .\teste-estresse.ps1" -ForegroundColor Yellow
+Write-Host "🧪 Para testes de resiliência: .\scripts\tests\teste-estresse.ps1" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "✨ A aplicação PatoCash está 100% funcional!" -ForegroundColor Green
