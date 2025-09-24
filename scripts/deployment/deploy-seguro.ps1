@@ -1,5 +1,18 @@
-
 # Script de Deploy Seguro - PatoCash Kubernetes
+# # Verificar se arquivo .env existe (na raiz)
+if (-not (Test-Path ".env")) {
+    Write-Host "ERRO: Arquivo .env nao encontrado na raiz!" -ForegroundColor Red
+    Write-Host "Crie o arquivo .env baseado em kubernetes\configs\.env-exemplo" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "INICIANDO DEPLOY SEGURO PATOCASH" -ForegroundColor Green
+Write-Host "=" * 50
+
+# Navegar para a raiz do projeto (2 niveis acima)
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Set-Location $projectRoot
+Write-Host "Executando a partir de: $projectRoot" -ForegroundColor Cyande Deploy Seguro - PatoCash Kubernetes
 # Este script usa variáveis do .env de forma segura (Nova estrutura organizada)
 
 Write-Host "INICIANDO DEPLOY SEGURO PATOCASH" -ForegroundColor Green
@@ -13,41 +26,42 @@ Write-Host "Executando a partir de: $projectRoot" -ForegroundColor Cyan
 # Importar função para criar Secret a partir do .env
 . "$PSScriptRoot\create-secret.ps1"
 
-# Verificar se Minikube está rodando
+# Verificar se Minikube esta rodando
 Write-Host "VERIFICANDO MINIKUBE..." -ForegroundColor Cyan
 Write-Host "-" * 30
 
 $minikubeStatus = minikube status 2>$null
 if ($LASTEXITCODE -ne 0 -or $minikubeStatus -notmatch "Running") {
-    Write-Host "Minikube não está rodando. Iniciando..." -ForegroundColor Yellow
+    Write-Host "AVISO: Minikube nao esta rodando. Iniciando..." -ForegroundColor Yellow
     try {
         minikube start --driver=docker
         if ($LASTEXITCODE -ne 0) {
             throw "Falha ao iniciar Minikube"
         }
+        Write-Host "OK: Minikube iniciado com sucesso!" -ForegroundColor Green
         Write-Host "Habilitando metrics-server..." -ForegroundColor Yellow
         minikube addons enable metrics-server
         Write-Host "Aguardando metrics-server..." -ForegroundColor Yellow
         Start-Sleep -Seconds 10
         
     } catch {
-        Write-Host "Falha ao iniciar Minikube: $_" -ForegroundColor Red
+        Write-Host "ERRO: Falha ao iniciar Minikube: $_" -ForegroundColor Red
         exit 1
     }
 } else {
-        Write-Host "Minikube já está rodando!" -ForegroundColor Green
+        Write-Host "OK: Minikube ja esta rodando!" -ForegroundColor Green
 }
 
 Write-Host ""
 
 # Verificar se arquivo .env existe (na raiz)
 if (-not (Test-Path ".env")) {
-    Write-Host "Arquivo .env não encontrado na raiz!" -ForegroundColor Red
+    Write-Host "ERRO: Arquivo .env nao encontrado na raiz!" -ForegroundColor Red
     Write-Host "Crie o arquivo .env baseado em kubernetes\configs\.env-exemplo" -ForegroundColor Yellow
     exit 1
 }
 
-Write-Host "Arquivo .env encontrado na raiz" -ForegroundColor Green
+Write-Host "OK: Arquivo .env encontrado na raiz" -ForegroundColor Green
 
 # 1. Criar Secret dinamicamente do .env
 Write-Host "Criando Secret a partir do .env..." -ForegroundColor Cyan
@@ -100,35 +114,62 @@ Write-Host "=" * 30
 kubectl get all
 
 Write-Host ""
-Write-Host "SEGURANÇA IMPLEMENTADA:" -ForegroundColor Green
-Write-Host "Credenciais em Secrets (criptografadas)" -ForegroundColor Green
-Write-Host "Configurações em ConfigMaps" -ForegroundColor Green
-Write-Host "Variáveis sensíveis isoladas" -ForegroundColor Green
+Write-Host "SEGURANCA IMPLEMENTADA:" -ForegroundColor Green
+Write-Host "OK: Credenciais em Secrets (criptografadas)" -ForegroundColor Green
+Write-Host "OK: Configuracoes em ConfigMaps" -ForegroundColor Green
+Write-Host "OK: Variaveis sensiveis isoladas" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "INICIANDO ACESSO À APLICAÇÃO..." -ForegroundColor Cyan
-Write-Host "Configurando port-forward para acesso local..." -ForegroundColor Yellow
+Write-Host "INICIANDO ACESSO A APLICACAO..." -ForegroundColor Cyan
 
-# Iniciar port-forward em background
-Write-Host "Iniciando port-forward na porta 3000..." -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward service/patocast-frontend-service 3000:3000" -WindowStyle Normal
+# Usar o script acesso-app para configurar port-forward
+$acessoScript = Join-Path $PSScriptRoot "acesso-app.ps1"
 
-# Aguardar um pouco para o port-forward inicializar
-Start-Sleep -Seconds 3
+if (Test-Path $acessoScript) {
+    Write-Host "Executando acesso-app.ps1 para configurar port-forwards..." -ForegroundColor Yellow
+    
+    # Executar acesso-app em background para configurar port-forwards
+    Start-Job -ScriptBlock {
+        param($scriptPath)
+        
+        # Configurar port-forward para frontend (porta 3000)
+        Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-frontend-service 3000:3000" -WindowStyle Hidden -PassThru
+        
+        # Configurar port-forward para backend (porta 5000)  
+        Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-backend-service 5000:5000" -WindowStyle Hidden -PassThru
+        
+        Start-Sleep -Seconds 5
+        return "Port-forwards configurados"
+    } -ArgumentList $acessoScript | Out-Null
+    
+    # Aguardar port-forwards serem configurados
+    Start-Sleep -Seconds 8
+    
+    Write-Host "OK: Port-forwards configurados automaticamente!" -ForegroundColor Green
+    
+} else {
+    Write-Host "AVISO: Script acesso-app.ps1 nao encontrado!" -ForegroundColor Yellow
+    Write-Host "Configurando port-forward simples..." -ForegroundColor Yellow
+    
+    # Fallback para port-forward simples
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward service/patocast-frontend-service 3000:3000" -WindowStyle Normal
+    Start-Sleep -Seconds 3
+}
 
 Write-Host ""
-Write-Host "APLICAÇÃO DISPONÍVEL:" -ForegroundColor Green
-Write-Host "Acesse: http://localhost:3000" -ForegroundColor Yellow
-Write-Host "Port-forward rodando em terminal separado" -ForegroundColor Green
+Write-Host "APLICACAO DISPONIVEL:" -ForegroundColor Green
+Write-Host "Frontend: http://localhost:3000" -ForegroundColor Yellow
+Write-Host "Backend: http://localhost:5000" -ForegroundColor Yellow
+Write-Host "Metricas: http://localhost:5000/metrics" -ForegroundColor Yellow
 
 Write-Host ""
-Write-Host "TESTE A ROTA PROBLEMÁTICA:" -ForegroundColor Cyan
+Write-Host "TESTE A ROTA PROBLEMATICA:" -ForegroundColor Cyan
 Write-Host "http://localhost:3000/save_conta (POST)" -ForegroundColor Yellow
 
 Write-Host ""
 Write-Host "CONTROLE DO PORT-FORWARD:" -ForegroundColor Blue
-Write-Host "Para parar: Feche o terminal do port-forward" -ForegroundColor Yellow
-Write-Host "Para reiniciar: kubectl port-forward service/patocast-frontend-service 3000:3000" -ForegroundColor Yellow
+Write-Host "Para reconfigurar: .\scripts\deployment\acesso-app.ps1" -ForegroundColor Yellow
+Write-Host "Para parar: Feche os processos ou reinicie o terminal" -ForegroundColor Yellow
 
 Write-Host ""
-Write-Host "DEPLOY SEGURO CONCLUÍDO E APLICAÇÃO ACESSÍVEL!" -ForegroundColor Green
+Write-Host "DEPLOY SEGURO CONCLUIDO E APLICACAO ACESSIVEL!" -ForegroundColor Green

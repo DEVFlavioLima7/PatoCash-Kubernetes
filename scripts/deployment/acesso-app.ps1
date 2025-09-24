@@ -57,5 +57,5 @@ Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-fr
 # Iniciar port-forward para backend
 Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-backend-service 5000:5000" -WindowStyle Hidden
 
-Write-Host "🚀 Port-forwards iniciados em background. Pressione qualquer tecla para sair." -ForegroundColor Green
+Write-Host "Port-forwards iniciados em background. Pressione qualquer tecla para sair." -ForegroundColor Green
 [void][System.Console]::ReadKey($true)

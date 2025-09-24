@@ -99,36 +99,77 @@ kubectl get pods -l app=patocast-backend
 Write-Host "TESTANDO NOVO ENDPOINT DE METRICAS..." -ForegroundColor Cyan
 Write-Host "Iniciando port-forward temporario..." -ForegroundColor Yellow
 
-# Port-forward em background
-$portForwardJob = Start-Job -ScriptBlock {
-    kubectl port-forward service/patocast-backend-service 5001:5000
-}
+# Usar o script acesso-app para configurar port-forward
+Write-Host "Usando script de acesso para configurar port-forward..." -ForegroundColor Cyan
+$acessoScript = Join-Path $PSScriptRoot "acesso-app.ps1"
 
-Start-Sleep -Seconds 5
-
-try {
-    Write-Host "Testando http://localhost:5001/metrics..." -ForegroundColor Yellow
-    $response = Invoke-WebRequest -Uri "http://localhost:5001/metrics" -TimeoutSec 10 -ErrorAction Stop
-    Write-Host "SUCESSO! Endpoint de metricas respondendo:" -ForegroundColor Green
-    Write-Host "Status: $($response.StatusCode)" -ForegroundColor White
-    Write-Host "Content-Type: $($response.Headers.'Content-Type')" -ForegroundColor White
+if (Test-Path $acessoScript) {
+    Write-Host "Executando acesso-app.ps1 em background..." -ForegroundColor Yellow
     
-    # Mostrar primeiras linhas das metricas
-    $metricsLines = ($response.Content -split "`n") | Select-Object -First 5
-    Write-Host "Primeiras metricas:" -ForegroundColor Cyan
-    foreach ($line in $metricsLines) {
-        if ($line.Trim()) {
-            Write-Host "  $line" -ForegroundColor Gray
+    # Executar acesso-app em background para configurar port-forwards
+    $portForwardJob = Start-Job -ScriptBlock {
+        param($scriptPath)
+        
+        # Configurar port-forward para backend (porta 5000)
+        Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-backend-service 5000:5000" -WindowStyle Hidden -PassThru
+        
+        # Configurar port-forward para frontend (porta 3000)
+        Start-Process powershell -ArgumentList "kubectl port-forward service/patocast-frontend-service 3000:3000" -WindowStyle Hidden -PassThru
+        
+        Start-Sleep -Seconds 5
+        return "Port-forwards configurados"
+    } -ArgumentList $acessoScript
+    
+    # Aguardar port-forwards serem configurados
+    Start-Sleep -Seconds 8
+    
+    try {
+        Write-Host "Testando http://localhost:5000/metrics..." -ForegroundColor Yellow
+        $response = Invoke-WebRequest -Uri "http://localhost:5000/metrics" -TimeoutSec 10 -ErrorAction Stop
+        Write-Host "SUCESSO! Endpoint de metricas respondendo:" -ForegroundColor Green
+        Write-Host "Status: $($response.StatusCode)" -ForegroundColor White
+        Write-Host "Content-Type: $($response.Headers.'Content-Type')" -ForegroundColor White
+        
+        # Mostrar primeiras linhas das metricas
+        $metricsLines = ($response.Content -split "`n") | Select-Object -First 5
+        Write-Host "Primeiras metricas:" -ForegroundColor Cyan
+        foreach ($line in $metricsLines) {
+            if ($line.Trim()) {
+                Write-Host "  $line" -ForegroundColor Gray
+            }
         }
+        
+    } catch {
+        Write-Host "AVISO: Nao foi possivel testar o endpoint: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Teste manualmente executando: .\scripts\deployment\acesso-app.ps1" -ForegroundColor Yellow
+    } finally {
+        # Limpar job
+        $portForwardJob | Remove-Job -Force -ErrorAction SilentlyContinue
     }
     
-} catch {
-    Write-Host "AVISO: Nao foi possivel testar o endpoint: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "Teste manualmente: kubectl port-forward service/patocast-backend-service 5000:5000" -ForegroundColor Yellow
-} finally {
-    # Parar port-forward
-    $portForwardJob | Stop-Job -ErrorAction SilentlyContinue
-    $portForwardJob | Remove-Job -ErrorAction SilentlyContinue
+} else {
+    Write-Host "AVISO: Script acesso-app.ps1 nao encontrado!" -ForegroundColor Yellow
+    Write-Host "Usando port-forward simples..." -ForegroundColor Yellow
+    
+    # Fallback para port-forward simples
+    $portForwardJob = Start-Job -ScriptBlock {
+        kubectl port-forward service/patocast-backend-service 5001:5000
+    }
+    
+    Start-Sleep -Seconds 5
+    
+    try {
+        Write-Host "Testando http://localhost:5001/metrics..." -ForegroundColor Yellow
+        $response = Invoke-WebRequest -Uri "http://localhost:5001/metrics" -TimeoutSec 10 -ErrorAction Stop
+        Write-Host "SUCESSO! Endpoint de metricas respondendo:" -ForegroundColor Green
+        Write-Host "Status: $($response.StatusCode)" -ForegroundColor White
+        
+    } catch {
+        Write-Host "AVISO: Nao foi possivel testar o endpoint: $($_.Exception.Message)" -ForegroundColor Yellow
+    } finally {
+        $portForwardJob | Stop-Job -ErrorAction SilentlyContinue
+        $portForwardJob | Remove-Job -ErrorAction SilentlyContinue
+    }
 }
 
 # Verificar se HPA pode usar metricas
@@ -151,10 +192,16 @@ Write-Host "  OK: Endpoint /metrics disponivel" -ForegroundColor White
 Write-Host "  OK: Prometheus client integrado" -ForegroundColor White
 
 Write-Host ""
-Write-Host "PARA TESTAR AS METRICAS:" -ForegroundColor Yellow
-Write-Host "kubectl port-forward service/patocast-backend-service 5000:5000" -ForegroundColor Gray
-Write-Host "curl http://localhost:5000/metrics" -ForegroundColor Gray
+Write-Host "ACESSO A APLICACAO:" -ForegroundColor Yellow
+Write-Host "Frontend: http://localhost:3000" -ForegroundColor Gray  
+Write-Host "Backend: http://localhost:5000" -ForegroundColor Gray
+Write-Host "Metricas: http://localhost:5000/metrics" -ForegroundColor Gray
 
 Write-Host ""
-Write-Host "PARA EXECUTAR TESTE DE STRESS:" -ForegroundColor Yellow
-Write-Host ".\scripts\tests\teste-resiliencia.ps1 -Teste hpa -Rapido" -ForegroundColor Gray
+Write-Host "COMANDOS UTEIS:" -ForegroundColor Yellow
+Write-Host "Configurar acesso: .\scripts\deployment\acesso-app.ps1" -ForegroundColor Gray
+Write-Host "Teste de stress: .\scripts\tests\teste-resiliencia.ps1 -Teste hpa -Rapido" -ForegroundColor Gray
+
+Write-Host ""
+Write-Host "NOTA: Port-forwards foram configurados automaticamente!" -ForegroundColor Cyan
+Write-Host "Se houver problemas, execute: .\scripts\deployment\acesso-app.ps1" -ForegroundColor Yellow

@@ -9,3 +9,6 @@ back:
 
 frontend:
 	@cd front && npm install && npm start
+
+test_stress:
+	@cd scripts/tests && python stress_test.py --test hpa --duration 60
