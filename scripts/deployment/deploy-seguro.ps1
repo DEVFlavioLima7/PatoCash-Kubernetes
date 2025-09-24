@@ -12,7 +12,8 @@ Write-Host "=" * 50
 # Navegar para a raiz do projeto (2 niveis acima)
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $projectRoot
-Write-Host "Executando a partir de: $projectRoot" -ForegroundColor Cyande Deploy Seguro - PatoCash Kubernetes
+Write-Host "Executando a partir de: $projectRoot" -ForegroundColor Cyan
+Write-Host "Deploy Seguro - PatoCash Kubernetes" -ForegroundColor Green
 # Este script usa variáveis do .env de forma segura (Nova estrutura organizada)
 
 Write-Host "INICIANDO DEPLOY SEGURO PATOCASH" -ForegroundColor Green
