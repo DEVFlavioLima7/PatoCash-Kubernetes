@@ -8,6 +8,17 @@
 
 > Sistema completo de gerenciamento financeiro com deploy automatizado em Kubernetes
 
+## ✅ **ATIVIDADE 5 CONCLUÍDA - TOLERÂNCIA A FALHAS E MONITORAMENTO**
+
+### 🎯 Objetivos Alcançados:
+- ✅ **HPA (Horizontal Pod Autoscaler)**: Escalonamento automático por CPU (70%)
+- ✅ **Monitoramento Prometheus**: Coleta de métricas em tempo real
+- ✅ **Alta Disponibilidade**: Múltiplas réplicas (Frontend: 2-4, Backend: 2-5)
+- ✅ **Health Checks**: Probes de liveness e readiness
+- ✅ **Organização**: Estrutura kubernetes/{configs,manifests,monitoring}
+- ✅ **Testes Automatizados**: Scripts de resiliência e validação
+- ✅ **Acesso Simplificado**: Port-forward automático e diagnósticos
+
 ## 🚀 **Quick Start**
 
 ```powershell

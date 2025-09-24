@@ -2,4 +2,4 @@ flask
 psycopg2-binary
 dotenv
 flask-cors
-prometheus_client
+prometheus_flask_exporter

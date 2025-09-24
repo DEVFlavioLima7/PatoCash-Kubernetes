@@ -4,13 +4,13 @@ load_dotenv()
 
 from flask import Flask, Blueprint
 from flask_cors import CORS
+from prometheus_flask_exporter import PrometheusMetrics
 from src.routes.user_routes import router_user
 from src.routes.trasaction_routes import router_transaction
 from src.routes.card_roules import card_routes  
 from src.routes.email_routes import email_routes
 from src.routes.form_routes import form_routes
 from src.routes.posso_ajudar import posso_ajudar_routes
-from prometheus_client import generate_latest, Counter
 
 rout_teste = Blueprint('route', __name__)
 @rout_teste.route('/', methods=['GET'])
@@ -19,9 +19,8 @@ def teste():
 
 app = Flask(__name__)
 
-@app.route("/metrics")
-def metrics():
-    return generate_latest(), 200, {"Content-Type": "text/plain"}
+# Inicializar métricas do Prometheus
+metrics = PrometheusMetrics(app)
 
 app.register_blueprint(rout_teste)
 app.register_blueprint(router_user)
