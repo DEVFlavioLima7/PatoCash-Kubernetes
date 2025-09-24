@@ -6,10 +6,14 @@ metadata:
 data:
   prometheus.yml: |
     global:
-      scrape_interval: 15s
-      evaluation_interval: 15s
+      scrape_interval: 5s
+      evaluation_interval: 5s
+
+    rule_files:
+      - "patocast_rules.yml"
 
     scrape_configs:
+
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
           - role: pod
@@ -46,3 +50,73 @@ data:
           - targets: ['patocast-frontend-service.default.svc.cluster.local:3000']
         metrics_path: '/metrics'
         scrape_interval: 5s
+
+      # Kube State Metrics (for HPA status)
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics.kube-system.svc.cluster.local:8080']
+        scrape_interval: 3s
+
+  patocast_rules.yml: |
+    groups:
+    - name: patocast_hpa_demo
+      interval: 5s
+      rules:
+      # Recording rules - queries pré-calculadas
+      - record: patocast:cpu_usage_percent
+        expr: avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100) by (instance)
+        labels:
+          description: "Porcentagem de uso de CPU por instância do backend PatoCash"
+
+      - record: patocast:pod_count
+        expr: count(kube_pod_info{pod=~"patocast-backend.*"})
+        labels:
+          description: "Número total de pods do backend PatoCash em execução"
+
+      - record: patocast:hpa_current_replicas
+        expr: kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler="patocast-backend-hpa"}
+        labels:
+          description: "Número atual de réplicas configuradas pelo HPA do backend PatoCash"
+
+      - record: patocast:hpa_desired_replicas
+        expr: kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler="patocast-backend-hpa"}
+        labels:
+          description: "Número desejado de réplicas pelo HPA do backend PatoCash"
+
+      - record: patocast:cpu_above_threshold
+        expr: (avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100) by (instance)) > 50
+        labels:
+          description: "Indica se o CPU está acima do limite de 50% (utilizado para demonstração de scaling)"
+
+      - record: patocast:replica_changes
+        expr: increase(kube_deployment_status_replicas_available{deployment="patocast-backend"}[1m])
+        labels:
+          description: "Mudanças no número de réplicas disponíveis do deployment backend no último minuto"
+
+      - record: patocast:avg_cpu_usage
+        expr: avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100)
+        annotations:
+          description: "Uso médio de CPU do backend PatoCash"
+
+      # Alerting rules - para demonstração
+      - alert: PatoCash_HighCPU
+        expr: patocast:avg_cpu_usage > 5
+        for: 10s
+        labels:
+          severity: demo
+          component: backend
+          service: patocast
+        annotations:
+          summary: "PatoCash Backend - Alto uso de CPU detectado (Demonstração HPA)"
+          description: "O uso médio de CPU dos pods do backend PatoCash está em {{ $value | humanize }}%, acionando o HPA para escalonamento automático. Este alerta é parte da demonstração do sistema de auto-scaling."
+
+      - alert: PatoCash_Scaling
+        expr: patocast:hpa_current_replicas > 2
+        for: 10s
+        labels:
+          severity: demo
+          component: hpa
+          service: patocast
+        annotations:
+          summary: "PatoCash Backend - Escalonamento automático ativo (Demonstração HPA)"
+          description: "O HPA escalonou o backend PatoCash para {{ $value }} réplicas devido ao aumento da demanda. Demonstração do sistema de auto-scaling funcionando corretamente."
