@@ -11,6 +11,7 @@
     "fs": "^0.0.1-security",
     "nunjucks": "^3.2.4",
     "playwright": "^1.51.1",
+    "prom-client": "^14.2.0",
     "progressbar.js": "^1.1.1",
     "sass": "^1.81.0",
     "shifty": "^3.0.4"

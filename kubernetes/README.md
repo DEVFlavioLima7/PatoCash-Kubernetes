@@ -1,78 +1,79 @@
-# ⚙️ Configurações Kubernetes
+﻿# PatoCash - Kubernetes Deployment
 
-## 📁 Estrutura
+Este projeto contem o deployment da aplicacao PatoCash no Kubernetes com monitoramento Prometheus.
 
-```
+## Estrutura do Projeto
+
+`
 kubernetes/
-├── manifests/           # Deployments, Services, HPA
-│   ├── k8s-backend.yaml      # Backend Flask (2-6 pods)
-│   ├── k8s-frontend.yaml     # Frontend Node.js (2 pods)
-│   ├── k8s-postgres.yaml     # PostgreSQL + scripts
-│   ├── k8s-configmap.yaml    # Configurações não sensíveis
-│   └── k8s-hpa.yaml         # Auto-scaling rules
-└── configs/             # Configurações e exemplos
-    └── .env-exemplo          # Template de configuração
-```
+â”œâ”€â”€ configs/           # Arquivos de configuracao (.env, secrets)
+â”œâ”€â”€ manifests/         # Manifestos Kubernetes da aplicacao
+â”‚   â”œâ”€â”€ k8s-configmap.yaml
+â”‚   â”œâ”€â”€ k8s-frontend.yaml
+â”‚   â”œâ”€â”€ k8s-backend.yaml
+â”‚   â”œâ”€â”€ k8s-postgres.yaml
+â”‚   â””â”€â”€ k8s-hpa.yaml
+â””â”€â”€ monitoring/        # Monitoramento com Prometheus
+    â”œâ”€â”€ prometheus-configmap.yaml
+    â””â”€â”€ prometheus-deployment.yaml
 
-## 🚀 Deploy Rápido
+scripts/
+â”œâ”€â”€ deployment/        # Scripts de deployment
+â””â”€â”€ testing/          # Scripts de teste
+    â”œâ”€â”€ teste-completo-zero.ps1
+    â””â”€â”€ teste-resiliencia.ps1
+`
 
-```powershell
-# Deploy completo
-..\scripts\deployment\deploy-seguro.ps1
+## Como usar
 
-# Apenas manifests
-kubectl apply -f manifests/
+1. **Executar deploy completo:**
+   `powershell
+   .\teste-completo.ps1
+   `
 
-# Aplicar específico
-kubectl apply -f manifests/k8s-backend.yaml
-```
+2. **Acessar aplicacao:**
+   `powershell
+   # Via port-forward (recomendado)
+   kubectl port-forward service/patocast-frontend-service 3000:3000
+   
+   # Abrir no navegador: http://localhost:3000
+   `
 
-## 📋 Manifests Disponíveis
+3. **Monitorar aplicacao:**
+   `powershell
+   # Status dos pods
+   kubectl get pods,svc,hpa
+   
+   # Metricas de CPU/Memoria
+   kubectl top pods
+   
+   # Logs da aplicacao
+   kubectl logs -l app=patocast-frontend
+   `
 
-| Arquivo | Descrição | Réplicas | Porta |
-|---------|-----------|----------|-------|
-| `k8s-backend.yaml` | API Flask + Python | 2-6 (HPA) | 5000 |
-| `k8s-frontend.yaml` | Node.js + Express | 2 fixas | 3000 |
-| `k8s-postgres.yaml` | PostgreSQL + Scripts SQL | 1 | 5432 |
-| `k8s-configmap.yaml` | Configurações não sensíveis | - | - |
-| `k8s-hpa.yaml` | Auto-scaling (CPU 70%) | - | - |
+4. **Acessar Prometheus:**
+   `powershell
+   kubectl port-forward -n monitoring service/prometheus-service 9090:9090
+   # Abrir no navegador: http://localhost:9090
+   `
 
-## 🔧 Comandos Úteis
+## Testes de Resiliencia
 
-```powershell
-# Ver status dos pods
-kubectl get pods -l app=patocast-backend,app=patocast-frontend
+Execute os testes de falhas e recuperacao:
+`powershell
+.\scripts\testing\teste-resiliencia.ps1
+`
 
-# Verificar HPA
-kubectl get hpa patocast-hpa
+## Requisitos
 
-# Logs dos pods
-kubectl logs -l app=patocast-backend --tail=50
+- Docker Desktop
+- Minikube
+- kubectl
+- PowerShell 5.1+
 
-# Escalar manualmente
-kubectl scale deployment patocast-backend --replicas=4
+## URLs de Acesso
 
-# Aplicar mudanças
-kubectl apply -f manifests/
-```
-
-## 🛡️ Segurança
-
-- ✅ **Secrets**: Criados dinamicamente do arquivo `.env`
-- ✅ **ConfigMaps**: Apenas dados não sensíveis
-- ✅ **RBAC**: Permissões mínimas necessárias
-- ✅ **Health Checks**: Liveness e readiness probes
-
-## 📊 Monitoramento
-
-```powershell
-# Recursos em tempo real
-kubectl top pods
-
-# Eventos recentes
-kubectl get events --sort-by='.lastTimestamp'
-
-# Descrição detalhada
-kubectl describe deployment patocast-backend
-kubectl describe hpa patocast-hpa
-```
+- **Frontend:** http://localhost:3000 (via port-forward)
+- **Backend:** http://localhost:5000 (via port-forward)  
+- **Prometheus:** http://localhost:9090 (via port-forward)
+- **Postgres:** localhost:5432 (via port-forward)

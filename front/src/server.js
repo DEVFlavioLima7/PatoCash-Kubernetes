@@ -1,11 +1,52 @@
 const express = require('express')
 const cookieParser = require('cookie-parser');
 const { chromium } = require('playwright');
+const promClient = require('prom-client');
 
 const server = express()
 const port = process.env.PORT || 3000
 const host_backend = process.env.HOST_BACKEND || 'localhost'
 const port_backend = process.env.PORT_BACKEND || 5000
+
+// Configurar métricas do Prometheus
+const register = promClient.register;
+promClient.collectDefaultMetrics({ register });
+
+// Métricas customizadas
+const httpRequestsTotal = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status_code'],
+});
+
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route'],
+});
+
+// Middleware para coletar métricas
+server.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    const route = req.route ? req.route.path : req.path;
+    
+    httpRequestsTotal.inc({
+      method: req.method,
+      route: route,
+      status_code: res.statusCode,
+    });
+    
+    httpRequestDuration.observe(
+      { method: req.method, route: route },
+      duration
+    );
+  });
+  
+  next();
+});
 
 console.log(`Frontend rodando na porta ${port}`)
 console.log(`Backend rodando na porta ${port_backend}`)
@@ -14,6 +55,12 @@ console.log(`Host do backend: ${host_backend}`)
 server.use(express.static("public"))
 server.use(express.urlencoded({extended: true}))
 server.use(cookieParser())
+
+// Endpoint para métricas do Prometheus
+server.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 const nunjucks = require('nunjucks')
 nunjucks.configure(
