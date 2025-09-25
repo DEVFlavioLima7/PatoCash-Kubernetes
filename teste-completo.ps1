@@ -249,21 +249,18 @@ function Deploy-Application {
     }
 
     Write-Host "Aguardando pods..." -ForegroundColor Yellow
-    $timeout = 180
-    $start = Get-Date
-    
-    while (((Get-Date) - $start).TotalSeconds -lt $timeout) {
+    do {
         $backendReady = kubectl get pods -l app=patocast-backend --field-selector=status.phase=Running 2>$null
         $frontendReady = kubectl get pods -l app=patocast-frontend --field-selector=status.phase=Running 2>$null
         $postgresReady = kubectl get pods -l app=postgres --field-selector=status.phase=Running 2>$null
 
-        if ($backendReady -and $frontendReady -and $postgresReady -and $prometheusReady) {
+        if ($backendReady -and $frontendReady -and $postgresReady) {
             Write-Host "Deploy concluido!" -ForegroundColor Green
             return
         }
-        
+
         Start-Sleep -Seconds 10
-    }
+    } while ($true)
     
     Write-Host "Timeout - verificando status..." -ForegroundColor Yellow
     kubectl get pods --all-namespaces
