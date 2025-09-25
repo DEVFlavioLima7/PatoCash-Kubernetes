@@ -14,7 +14,7 @@ from datetime import datetime
 import argparse
 
 class PatoCashStressTester:
-    def __init__(self, duration=45, service_url="http://localhost:5000"):
+    def __init__(self, duration=120, service_url="http://localhost:5000"):
         self.duration = duration
         self.service_url = service_url
         self.is_running = False
@@ -383,8 +383,8 @@ def test_auto_healing():
 
 def main():
     parser = argparse.ArgumentParser(description='PatoCash Kubernetes Stress Tester')
-    parser.add_argument('--test', choices=['hpa', 'auto-healing', 'all'], default='hpa', help='Tipo de teste')
-    parser.add_argument('--duration', type=int, default=45, help='Duração do stress test em segundos')
+    parser.add_argument('--test', choices=['hpa', 'auto-healing', 'all'], default='all', help='Tipo de teste')
+    parser.add_argument('--duration', type=int, default=120, help='Duração do stress test em segundos')
     parser.add_argument('--url', default='http://localhost:5000',help='URL do serviço PatoCash')
     args = parser.parse_args()
     
