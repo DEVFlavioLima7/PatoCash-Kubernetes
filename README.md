@@ -26,7 +26,7 @@
 git clone https://github.com/JonasCGN/PatoCash-Kubernetes.git
 cd PatoCash-Kubernetes
 .\scripts\deployment\teste-completo-zero.ps1
-```
+``` 
 
 **🌐 Acesso**: http://localhost:3000
 

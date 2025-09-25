@@ -9,14 +9,16 @@ import time
 import requests
 import json
 import sys
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import argparse
 
 class PatoCashStressTester:
-    def __init__(self, duration=120, service_url="http://localhost:5000"):
+    def __init__(self, duration=120, service_url="http://localhost:5000", remote_only=False):
         self.duration = duration
         self.service_url = service_url
+        self.remote_only = remote_only
         self.is_running = False
         self.start_time = None
         
@@ -24,7 +26,7 @@ class PatoCashStressTester:
         self.http_requests_count = 0
         self.cpu_stress_active = False
         
-        # Estado dos pods
+        # Estado dos pods (apenas para modo local)
         self.initial_pods = 0
         self.current_pods = 0
         self.max_pods_seen = 0
@@ -36,12 +38,14 @@ class PatoCashStressTester:
     def run_kubectl(self, command):
         """Executa comando kubectl e retorna resultado"""
         try:
+            # Timeout maior para operações de delete
+            timeout_val = 30 if 'delete' in command else 15
             result = subprocess.run(
                 f"kubectl {command}", 
                 shell=True, 
                 capture_output=True, 
                 text=True, 
-                timeout=10
+                timeout=timeout_val
             )
             return result.stdout.strip(), result.stderr.strip(), result.returncode
         except subprocess.TimeoutExpired:
@@ -232,17 +236,20 @@ class PatoCashStressTester:
         print(f"🎯 INICIANDO PATOCASH STRESS TEST")
         print(f"Duração: {self.duration}s")
         print(f"Service URL: {self.service_url}")
+        if self.remote_only:
+            print("🌐 Modo REMOTE-ONLY (apenas HTTP)")
         print(f"{'='*50}")
         
-        # Verificar estado inicial
-        self.initial_pods = self.get_pod_count()
-        self.max_pods_seen = self.initial_pods
-        
-        if self.initial_pods == 0:
-            print("❌ ERRO: Nenhum pod backend encontrado!")
-            return False
-        
-        print(f"📋 Estado inicial: {self.initial_pods} pods")
+        # Verificar estado inicial (apenas em modo local)
+        if not self.remote_only:
+            self.initial_pods = self.get_pod_count()
+            self.max_pods_seen = self.initial_pods
+            
+            if self.initial_pods == 0:
+                print("❌ ERRO: Nenhum pod backend encontrado!")
+                return False
+            
+            print(f"📋 Estado inicial: {self.initial_pods} pods")
         
         # Verificar se serviço está acessível
         try:
@@ -266,23 +273,29 @@ class PatoCashStressTester:
                 thread.start()
                 threads.append(thread)
             
-            # 2. Iniciar stress CPU nos pods
-            print(f"🔥 Iniciando stress CPU nos pods...")
-            stdout, stderr, code = self.run_kubectl('get pods -l app=patocast-backend -o jsonpath="{.items[*].metadata.name}"')
-            if code == 0:
-                pod_names = stdout.split()
-                for pod_name in pod_names:
-                    if pod_name.strip():
-                        thread = threading.Thread(target=self.cpu_stress_worker, args=(pod_name,))
-                        thread.daemon = True
-                        thread.start()
-                        threads.append(thread)
+            # 2. Iniciar stress CPU nos pods (apenas modo local)
+            if not self.remote_only:
+                print(f"🔥 Iniciando stress CPU nos pods...")
+                stdout, stderr, code = self.run_kubectl('get pods -l app=patocast-backend -o jsonpath="{.items[*].metadata.name}"')
+                if code == 0:
+                    pod_names = stdout.split()
+                    for pod_name in pod_names:
+                        if pod_name.strip():
+                            thread = threading.Thread(target=self.cpu_stress_worker, args=(pod_name,))
+                            thread.daemon = True
+                            thread.start()
+                            threads.append(thread)
+            else:
+                print(f"🌐 Modo remote-only: Pulando stress CPU nos pods")
             
-            # 3. Iniciar monitoramento
-            monitor_thread = threading.Thread(target=self.monitoring_worker)
-            monitor_thread.daemon = True
-            monitor_thread.start()
-            threads.append(monitor_thread)
+            # 3. Iniciar monitoramento (apenas modo local)
+            if not self.remote_only:
+                monitor_thread = threading.Thread(target=self.monitoring_worker)
+                monitor_thread.daemon = True
+                monitor_thread.start()
+                threads.append(monitor_thread)
+            else:
+                print(f"🌐 Modo remote-only: Pulando monitoramento de pods")
             
             # 4. Aguardar duração do teste
             time.sleep(self.duration)
@@ -302,7 +315,11 @@ class PatoCashStressTester:
             # Relatório final
             self.generate_final_report()
         
-        return self.scaling_detected
+        # Em modo remote-only, sucesso é baseado apenas em completar as requisições
+        if self.remote_only:
+            return self.http_requests_count > 0
+        else:
+            return self.scaling_detected
     
     def generate_final_report(self):
         """Gera relatório final do teste"""
@@ -310,23 +327,97 @@ class PatoCashStressTester:
         print(f"📋 RELATÓRIO FINAL DO TESTE")
         print(f"{'='*60}")
         
-        final_cpu, final_replicas = self.get_hpa_status()
-        final_pods = self.get_pod_count()
-        
         print(f"⏱️  Duração total: {self.duration}s")
         print(f"🔥 HTTP Requests enviadas: {self.http_requests_count:,}")
-        print(f"📊 Pods inicial → final: {self.initial_pods} → {final_pods}")
-        print(f"📈 Máximo de pods visto: {self.max_pods_seen}")
-        print(f"⚡ CPU final: {final_cpu}%")
         
-        if self.scaling_detected:
-            print(f"✅ RESULTADO: SUCESSO - HPA funcionou!")
-            print(f"   Scaling automático detectado durante o teste")
+        if not self.remote_only:
+            final_cpu, final_replicas = self.get_hpa_status()
+            final_pods = self.get_pod_count()
+            
+            print(f"📊 Pods inicial → final: {self.initial_pods} → {final_pods}")
+            print(f"📈 Máximo de pods visto: {self.max_pods_seen}")
+            print(f"⚡ CPU final: {final_cpu}%")
+            
+            if self.scaling_detected:
+                print(f"✅ RESULTADO: SUCESSO - HPA funcionou!")
+                print(f"   Scaling automático detectado durante o teste")
+            else:
+                print(f"❌ RESULTADO: Scaling não detectado")
+                print(f"   Pode precisar de mais stress ou mais tempo")
         else:
-            print(f"❌ RESULTADO: Scaling não detectado")
-            print(f"   Pode precisar de mais stress ou mais tempo")
+            if self.http_requests_count > 0:
+                print(f"✅ Modo remote-only: Teste HTTP concluído com sucesso")
+                print(f"   {self.http_requests_count:,} requisições enviadas")
+            else:
+                print(f"❌ Modo remote-only: Nenhuma requisição HTTP completada")
+            print(f"💡 Para verificar scaling, execute o teste localmente com kubectl")
         
         print(f"{'='*60}")
+
+def test_remote_pod_deletion():
+    """Demonstra como excluir pod remotamente"""
+    print(f"🌐 COMO EXCLUIR POD REMOTAMENTE")
+    print(f"{'='*70}")
+    print(f"")
+    
+    # Mostrar pods atuais como exemplo
+    tester = PatoCashStressTester()
+    stdout, stderr, code = tester.run_kubectl('get pods -l app=patocast-backend --no-headers')
+    if code == 0 and stdout.strip():
+        pod_lines = [line for line in stdout.split('\n') if line.strip()]
+        if pod_lines:
+            example_pod = pod_lines[0].split()[0]
+            print(f"📋 EXEMPLO com pod atual: {example_pod}")
+            print(f"")
+    
+    print(f"🔍 COMO DESCOBRIR O NOME DO POD:")
+    print(f"   kubectl get pods -l app=patocast-backend")
+    print(f"   # Copia o nome de qualquer pod da lista")
+    print(f"")
+    print(f"📋 MÉTODOS DE ACESSO REMOTO:")
+    print(f"")
+    print(f"1️⃣  VIA SSH (MAIS FÁCIL):")
+    print(f"   🔧 COMO HABILITAR SSH NO SEU PC:")
+    print(f"      Windows: Configurações → Apps → Recursos Opcionais → OpenSSH Server")
+    print(f"      Ou via PowerShell (Admin): Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0")
+    print(f"      Iniciar: net start sshd")
+    print(f"   📝 CONECTAR DO OUTRO PC:")
+    print(f"      ssh {os.environ.get('USERNAME', 'seu_usuario')}@192.168.1.100")
+    print(f"   🏃 DEPOIS DE CONECTAR:")
+    print(f"      kubectl delete pod <nome-do-pod>")
+    print(f"   💡 Exemplo: kubectl delete pod {example_pod if 'example_pod' in locals() else 'patocast-backend-xxx-yyy'}")
+    print(f"")
+    print(f"2️⃣  VIA KUBECTL REMOTO:")
+    print(f"   🔧 Pré-requisito: kubeconfig configurado ou certificados")
+    print(f"   📝 Comando direto:")
+    print(f"      kubectl --server=https://192.168.1.100:6443 \\")
+    print(f"              --insecure-skip-tls-verify \\")
+    print(f"              delete pod <nome-do-pod>")
+    print(f"")
+    print(f"3️⃣  VIA KUBECTL PROXY (RECOMENDADO PARA TESTES):")
+    print(f"   🖥️  No servidor (192.168.1.100):")
+    print(f"      kubectl proxy --address=0.0.0.0 --port=8080")
+    print(f"   💻 Do seu computador:")
+    print(f"      curl -X DELETE http://192.168.1.100:8080/api/v1/namespaces/default/pods/<nome-do-pod>")
+    print(f"")
+    print(f"4️⃣  VIA DASHBOARD WEB (SE DISPONÍVEL):")
+    print(f"   🌐 Acesse: http://192.168.1.100:30080 (se dashboard estiver rodando)")
+    print(f"   👆 Clique em Pods → Selecionar pod → Delete")
+    print(f"")
+    print(f"⚡ CONFIGURAÇÃO RÁPIDA SSH (Windows):")
+    print(f"   1. PowerShell como Admin:")
+    print(f"      Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0")
+    print(f"      Start-Service sshd")
+    print(f"      Set-Service -Name sshd -StartupType 'Automatic'")
+    print(f"   2. Do outro PC: ssh {os.environ.get('USERNAME', 'usuario')}@192.168.1.100")
+    print(f"")
+    print(f"🔥 MÉTODO MAIS RÁPIDO PARA TESTAR:")
+    print(f"   1. Execute: python teste-resiliencia.py --test=auto-healing")
+    print(f"   2. O script mostra o nome do pod que será excluído")
+    print(f"   3. Copie o comando mostrado e execute remotamente")
+    print(f"")
+    print(f"🛡️  SEGURANÇA: SSH é o método mais seguro para produção")
+    print(f"{'='*70}")
 
 def test_auto_healing():
     """Teste de auto-healing (deletar pod)"""
@@ -335,42 +426,101 @@ def test_auto_healing():
     
     tester = PatoCashStressTester()
     
-    # Obter pods atuais
-    stdout, stderr, code = tester.run_kubectl('get pods -l app=patocast-backend -o jsonpath="{.items[0].metadata.name}"')
+    # Obter todos os pods e mostrar opções
+    stdout, stderr, code = tester.run_kubectl('get pods -l app=patocast-backend --no-headers')
     if code != 0 or not stdout.strip():
         print("❌ ERRO: Nenhum pod backend encontrado!")
         return False
     
-    pod_to_delete = stdout.strip()
+    # Listar todos os pods disponíveis
+    pod_lines = [line for line in stdout.split('\n') if line.strip() and 'Running' in line]
+    if not pod_lines:
+        print("❌ ERRO: Nenhum pod Running encontrado!")
+        return False
+    
+    print(f"📋 Pods disponíveis para exclusão:")
+    for i, line in enumerate(pod_lines):
+        pod_name = line.split()[0]
+        status = line.split()[2]
+        print(f"   {i+1}. {pod_name} ({status})")
+    
+    # Selecionar o primeiro pod automaticamente
+    pod_to_delete = pod_lines[0].split()[0]
     initial_pods = tester.get_pod_count()
     
-    print(f"📋 Pods iniciais: {initial_pods}")
-    print(f"🎯 Pod a deletar: {pod_to_delete}")
+    print(f"")
+    print(f"� Total de pods: {initial_pods}")
+    print(f"🎯 Pod selecionado para exclusão: {pod_to_delete}")
+    print(f"📍 DICA: Para excluir remotamente, use:")
+    print(f"   kubectl delete pod {pod_to_delete}")
     print(f"⏳ Deletando em 3 segundos...")
     time.sleep(3)
     
     # Deletar pod
     start_time = time.time()
     print(f"💥 DELETANDO POD: {pod_to_delete}")
-    stdout, stderr, code = tester.run_kubectl(f'delete pod {pod_to_delete}')
+    stdout, stderr, code = tester.run_kubectl(f'delete pod {pod_to_delete} --grace-period=0 --force')
     
     if code != 0:
         print(f"❌ ERRO ao deletar pod: {stderr}")
-        return False
+        # Tentar delete normal se o force falhar
+        print(f"🔄 Tentando delete normal...")
+        stdout, stderr, code = tester.run_kubectl(f'delete pod {pod_to_delete}')
+        if code != 0:
+            print(f"❌ ERRO no delete normal: {stderr}")
+            return False
     
     # Monitorar recuperação
     print(f"📊 Monitorando auto-healing...")
     healed = False
+    new_pod_name = None
+    
+    # Aguardar um pouco após deleção para capturar estado real
+    time.sleep(1)
     
     for attempt in range(30):  # 30 tentativas = ~1 minuto
         current_pods = tester.get_pod_count()
         elapsed = int(time.time() - start_time)
+        
+        # Obter nomes atuais dos pods
+        stdout, stderr, code = tester.run_kubectl('get pods -l app=patocast-backend -o jsonpath="{.items[*].metadata.name}"')
+        current_pod_names = set(stdout.split()) if code == 0 else set()
+        
+        # Na primeira iteração, mostrar estado atual
+        if attempt == 0:
+            print(f"🔍 Pods restantes após deleção: {list(current_pod_names)}")
+        
+        # Identificar novo pod
+        if current_pods >= initial_pods and not new_pod_name:
+            # Procurar por pods que não existiam na lista inicial
+            if attempt > 1:  # Dar tempo para o pod aparecer
+                for pod_name in current_pod_names:
+                    if pod_name != pod_to_delete and not new_pod_name:
+                        # Verificar se é um pod novo (diferente do deletado)
+                        stdout_age, _, _ = tester.run_kubectl(f'get pod {pod_name} -o jsonpath="{{.metadata.creationTimestamp}}"')
+                        if stdout_age and not new_pod_name:
+                            new_pod_name = pod_name
+                            print(f"🆕 NOVO POD DETECTADO: {new_pod_name}")
+                            break
         
         print(f"[{attempt+1}/30] Tempo: {elapsed}s | Pods Running: {current_pods}")
         
         if current_pods >= initial_pods:
             healed = True
             total_time = int(time.time() - start_time)
+            
+            # Mostrar resultado final
+            final_stdout, _, _ = tester.run_kubectl('get pods -l app=patocast-backend --no-headers')
+            if final_stdout:
+                print(f"📋 Estado final dos pods:")
+                for line in final_stdout.split('\n'):
+                    if line.strip():
+                        parts = line.split()
+                        pod_name = parts[0]
+                        age = parts[4] if len(parts) > 4 else "?"
+                        is_new = "🆕 NOVO" if pod_name != pod_to_delete and "s" in age else ""
+                        print(f"   {pod_name} (Age: {age}) {is_new}")
+            
             print(f"✅ SUCESSO: Auto-healing em {total_time}s!")
             break
         
@@ -383,28 +533,57 @@ def test_auto_healing():
 
 def main():
     parser = argparse.ArgumentParser(description='PatoCash Kubernetes Stress Tester')
-    parser.add_argument('--test', choices=['hpa', 'auto-healing', 'all'], default='all', help='Tipo de teste')
+    parser.add_argument('--test', choices=['hpa', 'auto-healing', 'all', 'remote-help', 'list-pods'], default='all', help='Tipo de teste')
     parser.add_argument('--duration', type=int, default=120, help='Duração do stress test em segundos')
     parser.add_argument('--url', default='http://localhost:5000',help='URL do serviço PatoCash')
+    parser.add_argument('--remote-only', action='store_true', help='Apenas envia requisições HTTP (não acessa kubectl/pods)')
     args = parser.parse_args()
     
-    if args.test == 'auto-healing':
-        success = test_auto_healing()
+    if args.test == 'remote-help':
+        test_remote_pod_deletion()
+        success = True
+    elif args.test == 'list-pods':
+        if args.remote_only:
+            print("⚠️  --remote-only não suporta listar pods (requer kubectl)")
+            success = False
+        else:
+            tester = PatoCashStressTester()
+            stdout, stderr, code = tester.run_kubectl('get pods -l app=patocast-backend')
+            if code == 0:
+                print("📋 PODS DISPONÍVEIS PARA EXCLUSÃO:")
+                print(stdout)
+                print("\n💡 Para excluir remotamente, copie um nome e use:")
+                print("   kubectl delete pod <nome-do-pod>")
+            else:
+                print("❌ Erro ao listar pods")
+            success = True
+    elif args.test == 'auto-healing':
+        if args.remote_only:
+            print("⚠️  --remote-only não suporta teste auto-healing (requer kubectl)")
+            success = False
+        else:
+            success = test_auto_healing()
     elif args.test == 'hpa':
-        tester = PatoCashStressTester(duration=args.duration, service_url=args.url)
+        tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only)
         success = tester.run_stress_test()
     elif args.test == 'all':
-        print("🚀 EXECUTANDO TODOS OS TESTES")
-        print("="*50)
-        
-        healing_success = test_auto_healing()
-        print("\n⏳ Aguardando 10s antes do próximo teste...")
-        time.sleep(10)
-        
-        tester = PatoCashStressTester(duration=args.duration, service_url=args.url)
-        hpa_success = tester.run_stress_test()
-        
-        success = healing_success and hpa_success
+        if args.remote_only:
+            print("🌐 MODO REMOTE-ONLY: Executando apenas teste HPA HTTP")
+            print("="*50)
+            tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only)
+            success = tester.run_stress_test()
+        else:
+            print("🚀 EXECUTANDO TODOS OS TESTES")
+            print("="*50)
+            
+            healing_success = test_auto_healing()
+            print("\n⏳ Aguardando 10s antes do próximo teste...")
+            time.sleep(10)
+            
+            tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only)
+            hpa_success = tester.run_stress_test()
+            
+            success = healing_success and hpa_success
     
     print(f"\n🎯 TESTE CONCLUÍDO: {'✅ SUCESSO' if success else '❌ FALHA'}")
     sys.exit(0 if success else 1)
