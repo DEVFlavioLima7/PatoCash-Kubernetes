@@ -1,6 +1,24 @@
 """
 PatoCash Kubernetes Stress Test
 Teste de stress inteligente com threads para forçar HPA e monitorar auto-healing
+
+USO BÁSICO:
+  python teste-resiliencia.py --test hpa --duration 180
+
+NOVOS PARÂMETROS DE STRESS:
+  --http-workers N       Numero de threads gerando requisicoes (default 12)
+  --concurrency N        Indicativo de concorrencia alvo (informativo)
+  --target-qps N         Tentar aproximar taxa de N requisicoes/segundo
+  --aggressive           Multiplica endpoints e remove delays para stress máximo
+  --burst N              Quantidade de requisicoes por burst em modo agressivo (default 5)
+
+EXEMPLO PARA FORÇAR HPA RÁPIDO:
+  python teste-resiliencia.py --test hpa --duration 300 \
+      --http-workers 40 --aggressive --burst 12 --target-qps 800
+
+DICA:
+  Ajuste --http-workers + --aggressive + --burst primeiro. Se ainda não atingir CPU alvo,
+  adicione --target-qps  (valores iniciais 400, 600, 800...).
 """
 
 import threading
@@ -13,9 +31,11 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import argparse
+import math
 
 class PatoCashStressTester:
-    def __init__(self, duration=120, service_url="http://localhost:5000", remote_only=False):
+    def __init__(self, duration=120, service_url="http://localhost:5000", remote_only=False,
+                 http_workers=12, concurrency=200, target_qps=None, aggressive=False, burst=5):
         self.duration = duration
         self.service_url = service_url
         self.remote_only = remote_only
@@ -34,6 +54,17 @@ class PatoCashStressTester:
         
         # Lock para thread safety
         self.lock = threading.Lock()
+        
+        # Parâmetros adicionais
+        self.http_workers = http_workers
+        self.concurrency = concurrency  # max simultaneas
+        self.target_qps = target_qps    # requisicoes por segundo alvo
+        self.aggressive = aggressive
+        self.burst = burst
+        self._qps_lock = threading.Lock()
+        self._requests_window = []  # timestamps recentes
+        self._errors = 0
+        self._last_qps = 0.0
         
     def run_kubectl(self, command):
         """Executa comando kubectl e retorna resultado"""
@@ -98,6 +129,22 @@ class PatoCashStressTester:
                 return cpu_percent, int(replicas)
         return 0, 0
     
+    def _throttle(self):
+        """Controla a taxa de requisicoes para aproximar target_qps se definido."""
+        if not self.target_qps:
+            return
+        now = time.time()
+        with self._qps_lock:
+            # remover timestamps mais antigos que 1s
+            cutoff = now - 1
+            self._requests_window = [t for t in self._requests_window if t > cutoff]
+            current_qps = len(self._requests_window)
+            self._last_qps = current_qps
+            if current_qps >= self.target_qps:
+                # dormir proporcional ao excesso
+                sleep_time = min(0.01, (current_qps - self.target_qps + 1) / (self.target_qps * 5))
+                time.sleep(sleep_time)
+
     def http_stress_worker(self, worker_id):
         """Worker thread para bombardear HTTP requests"""
         session = requests.Session()
@@ -110,6 +157,9 @@ class PatoCashStressTester:
             "/api/users",
             "/api/transactions"
         ]
+        # Em modo agressivo adicionar rotas repetidas para aumentar stress no servidor
+        if self.aggressive:
+            endpoints = endpoints * 4  # multiplicar lista
         
         local_count = 0
         
@@ -122,19 +172,30 @@ class PatoCashStressTester:
                     
                 try:
                     # Burst de 3 requests por endpoint
-                    for _ in range(3):
-                        response = session.get(f"{self.service_url}{endpoint}")
-                        local_count += 1
-                        
-                        if local_count % 100 == 0:
+                    for _ in range(3 if not self.aggressive else self.burst):
+                        if not self.is_running:
+                            break
+                        if self.target_qps:
+                            self._throttle()
+                        try:
+                            response = session.get(f"{self.service_url}{endpoint}")
+                            local_count += 1
+                            with self._qps_lock:
+                                self._requests_window.append(time.time())
+                        except requests.exceptions.RequestException:
                             with self.lock:
-                                self.http_requests_count += 100
-                
-                except requests.exceptions.RequestException:
-                    # Ignorar erros de rede e continuar bombardeando
-                    pass
+                                self._errors += 1
+                        except Exception:
+                            with self.lock:
+                                self._errors += 1
+                        # sem delay em modo agressivo; caso normal pequeno yield
+                        if not self.aggressive:
+                            time.sleep(0.001)
                 except Exception:
-                    pass
+                    # Protege loop externo de qualquer erro inesperado
+                    with self.lock:
+                        self._errors += 1
+                    continue
         
         with self.lock:
             self.http_requests_count += (local_count % 100)
@@ -191,8 +252,10 @@ class PatoCashStressTester:
                 print(f"🎯 PATOCASH KUBERNETES STRESS TEST")
                 print(f"{'='*60}")
                 print(f"⏱️  Tempo: {elapsed}s / {self.duration}s")
-                print(f"🔥 HTTP Requests: {self.http_requests_count:,}")
-                print(f"⚡ CPU Stress: {'ATIVO' if self.cpu_stress_active else 'INATIVO'}")
+                print(f"🔥 HTTP Requests: {self.http_requests_count:,} | Errors: {self._errors}")
+                if self.target_qps:
+                    print(f"🎯 QPS alvo: {self.target_qps} | Atual ~ {self._last_qps:.1f}")
+                print(f"👥 Workers: {self.http_workers} | Aggressive: {self.aggressive} | Burst: {self.burst}")
                 print(f"")
                 print(f"📊 HPA STATUS:")
                 print(f"   CPU Atual: {cpu_percent}% (Target: 50%)")
@@ -266,8 +329,8 @@ class PatoCashStressTester:
         
         try:
             # 1. Iniciar threads de stress HTTP (12 workers)
-            print(f"🚀 Iniciando 12 workers HTTP...")
-            for i in range(12):
+            print(f"🚀 Iniciando {self.http_workers} workers HTTP... (concorrência alvo {self.concurrency})")
+            for i in range(self.http_workers):
                 thread = threading.Thread(target=self.http_stress_worker, args=(i+1,))
                 thread.daemon = True
                 thread.start()
@@ -328,7 +391,9 @@ class PatoCashStressTester:
         print(f"{'='*60}")
         
         print(f"⏱️  Duração total: {self.duration}s")
-        print(f"🔥 HTTP Requests enviadas: {self.http_requests_count:,}")
+        print(f"🔥 HTTP Requests enviadas: {self.http_requests_count:,} | Errors: {self._errors}")
+        if self.target_qps:
+            print(f"🎯 QPS Alvo: {self.target_qps} | Último QPS medido ~ {self._last_qps:.1f}")
         
         if not self.remote_only:
             final_cpu, final_replicas = self.get_hpa_status()
@@ -537,6 +602,11 @@ def main():
     parser.add_argument('--duration', type=int, default=120, help='Duração do stress test em segundos')
     parser.add_argument('--url', default='http://localhost:5000',help='URL do serviço PatoCash')
     parser.add_argument('--remote-only', action='store_true', help='Apenas envia requisições HTTP (não acessa kubectl/pods)')
+    parser.add_argument('--http-workers', type=int, default=12, help='Quantidade de threads de HTTP workers')
+    parser.add_argument('--concurrency', type=int, default=200, help='Concorrência alvo (ajuste indicativo)')
+    parser.add_argument('--target-qps', type=int, help='Taxa alvo de requisições por segundo')
+    parser.add_argument('--aggressive', action='store_true', help='Modo agressivo (mais endpoints e sem delays)')
+    parser.add_argument('--burst', type=int, default=5, help='Quantidade de requests por burst em modo agressivo')
     args = parser.parse_args()
     
     if args.test == 'remote-help':
@@ -564,7 +634,9 @@ def main():
         else:
             success = test_auto_healing()
     elif args.test == 'hpa':
-        tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only)
+        tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only,
+                                      http_workers=args.http_workers, concurrency=args.concurrency,
+                                      target_qps=args.target_qps, aggressive=args.aggressive, burst=args.burst)
         success = tester.run_stress_test()
     elif args.test == 'all':
         if args.remote_only:
@@ -580,7 +652,9 @@ def main():
             print("\n⏳ Aguardando 10s antes do próximo teste...")
             time.sleep(10)
             
-            tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only)
+            tester = PatoCashStressTester(duration=args.duration, service_url=args.url, remote_only=args.remote_only,
+                                          http_workers=args.http_workers, concurrency=args.concurrency,
+                                          target_qps=args.target_qps, aggressive=args.aggressive, burst=args.burst)
             hpa_success = tester.run_stress_test()
             
             success = healing_success and hpa_success

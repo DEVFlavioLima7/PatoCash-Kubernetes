@@ -12,3 +12,6 @@ frontend:
 
 run_monitoring:
 	@cd maquina2-monitoring && powershell -ExecutionPolicy Bypass -File setup.ps1
+
+run_test:
+	python teste-resiliencia.py
