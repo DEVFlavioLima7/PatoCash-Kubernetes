@@ -1,0 +1,81 @@
+# Configuração do Prometheus para Máquina 2
+# Monitora remotamente o cluster Kubernetes da Máquina 1
+# Baseado na configuração funcional do cluster
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+# Regras de alerta e recording rules
+rule_files:
+  - "rules/*.yml"
+
+# Configuração de scraping - FOCO NO QUE FUNCIONA
+scrape_configs:
+  - job_name: 'apiserver'
+    static_configs:
+      - targets: ['192.168.1.100:8001']
+    metrics_path: '/metrics'
+
+  - job_name: 'kube-state-metrics'
+    metrics_path: '/api/v1/namespaces/kube-system/services/kube-state-metrics:http-metrics/proxy/metrics'
+    static_configs:
+      - targets: ['192.168.1.100:8001']   # IP do Notebook A com kubectl proxy
+    scrape_interval: 15s
+  # Prometheus self-monitoring
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+
+  # PatoCash Backend (COMENTADO - não tem endpoint /metrics)
+  # - job_name: 'patocast-backend'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:30000']
+  #   metrics_path: '/health'
+  #   scrape_interval: 5s
+
+  # PatoCash Frontend (COMENTADO - não tem endpoint /metrics)
+  # - job_name: 'patocast-frontend'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:30001']
+  #   metrics_path: '/'
+  #   scrape_interval: 5s
+
+  # Kubernetes API Server metrics (Máquina 1) - COMENTADO para simplicidade
+  # - job_name: 'kubernetes-apiservers'
+  #   static_configs:
+  #     - targets: ['192.168.49.2:30443']
+  #   scheme: https
+  #   tls_config:
+  #     insecure_skip_verify: true
+  #   metrics_path: '/metrics'
+  #   scrape_interval: 30s
+
+  # Kubelet metrics (Máquina 1) - COMENTADO para simplicidade
+  # - job_name: 'kubernetes-nodes'
+  #   static_configs:
+  #     - targets: ['192.168.49.2:30250']
+  #   scheme: https
+  #   tls_config:
+  #     insecure_skip_verify: true
+  #   metrics_path: '/metrics'
+  #   scrape_interval: 30s
+
+  # cAdvisor metrics (Máquina 1) - COMENTADO para simplicidade
+  # - job_name: 'kubernetes-cadvisor'
+  #   static_configs:
+  #     - targets: ['192.168.49.2:30194']
+  #   metrics_path: '/metrics'
+  #   scrape_interval: 30s
+
+# Configuração de alerting (opcional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+
+

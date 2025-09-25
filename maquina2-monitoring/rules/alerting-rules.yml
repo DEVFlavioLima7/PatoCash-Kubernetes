@@ -1,0 +1,27 @@
+# Alerting Rules para PatoCash - Máquina 2
+# Baseado nas regras funcionais do cluster Kubernetes
+groups:
+  - name: patocast_hpa_demo_alerts
+    rules:
+      # Alerting rules - para demonstração
+      - alert: PatoCash_HighCPU
+        expr: patocast:avg_cpu_usage > 0.5
+        for: 10s
+        labels:
+          severity: demo
+          component: backend
+          service: patocast
+        annotations:
+          summary: "PatoCash Backend - Alto uso de CPU detectado (Demonstração HPA)"
+          description: "O uso médio de CPU dos pods do backend PatoCash está em {{ $value | humanize }}%, acionando o HPA para escalonamento automático. Este alerta é parte da demonstração do sistema de auto-scaling."
+
+      - alert: PatoCash_Scaling
+        expr: patocast:hpa_current_replicas > 2
+        for: 10s
+        labels:
+          severity: demo
+          component: hpa
+          service: patocast
+        annotations:
+          summary: "PatoCash Backend - Escalonamento automático ativo (Demonstração HPA)"
+          description: "O HPA escalonou o backend PatoCash para {{ $value }} réplicas devido ao aumento da demanda. Demonstração do sistema de auto-scaling funcionando corretamente."

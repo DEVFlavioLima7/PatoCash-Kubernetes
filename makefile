@@ -9,3 +9,6 @@ back:
 
 frontend:
 	@cd front && npm install && npm start
+
+run_monitoring:
+	@cd maquina2-monitoring && powershell -ExecutionPolicy Bypass -File setup.ps1
