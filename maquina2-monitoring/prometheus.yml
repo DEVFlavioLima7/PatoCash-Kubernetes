@@ -1,6 +1,6 @@
 # Configuração do Prometheus para Máquina 2
 # Monitora remotamente o cluster Kubernetes da Máquina 1
-# Baseado na configuração funcional do cluster
+# Configuração limpa e funcional
 
 global:
   scrape_interval: 5s
@@ -12,63 +12,67 @@ rule_files:
 
 # Configuração de scraping - FOCO NO QUE FUNCIONA
 scrape_configs:
-  - job_name: 'apiserver'
+  # Kube State Metrics (Máquina 1) - PRINCIPAL para monitorar Kubernetes
+  - job_name: "kube-state-metrics"
     static_configs:
-      - targets: ['192.168.1.100:8001']
-    metrics_path: '/metrics'
+      - targets: ["host.docker.internal:8080"] # Port-forward para kube-state-metrics
+    metrics_path: "/metrics"
+    scrape_interval: 3s
 
-  - job_name: 'kube-state-metrics'
-    metrics_path: '/api/v1/namespaces/kube-system/services/kube-state-metrics:http-metrics/proxy/metrics'
-    static_configs:
-      - targets: ['192.168.1.100:8001']   # IP do Notebook A com kubectl proxy
-    scrape_interval: 15s
   # Prometheus self-monitoring
-
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]
     scrape_interval: 15s
 
-  # PatoCash Backend (COMENTADO - não tem endpoint /metrics)
-  # - job_name: 'patocast-backend'
-  #   static_configs:
-  #     - targets: ['host.docker.internal:30000']
-  #   metrics_path: '/health'
-  #   scrape_interval: 5s
+  - job_name: "patocast-backend"
+    static_configs:
+      - targets:
+          - "host.docker.internal:5000" # Acessa a máquina host do Windows
+    metrics_path: "/metrics"
+    scrape_interval: 5s
 
-  # PatoCash Frontend (COMENTADO - não tem endpoint /metrics)
-  # - job_name: 'patocast-frontend'
-  #   static_configs:
-  #     - targets: ['host.docker.internal:30001']
-  #   metrics_path: '/'
-  #   scrape_interval: 5s
+  - job_name: "patocast-frontend"
+    static_configs:
+      - targets:
+          - "host.docker.internal:3000" # Acessa a máquina host do Windows
+    metrics_path: "/metrics"
+    scrape_interval: 5s
 
-  # Kubernetes API Server metrics (Máquina 1) - COMENTADO para simplicidade
-  # - job_name: 'kubernetes-apiservers'
-  #   static_configs:
-  #     - targets: ['192.168.49.2:30443']
-  #   scheme: https
-  #   tls_config:
-  #     insecure_skip_verify: true
-  #   metrics_path: '/metrics'
-  #   scrape_interval: 30s
+  # Kube State Metrics adicional (for HPA status)
+  - job_name: "kube-state-metrics-hpa"
+    static_configs:
+      - targets:
+          - "host.docker.internal:8080"
+    scrape_interval: 3s
 
-  # Kubelet metrics (Máquina 1) - COMENTADO para simplicidade
-  # - job_name: 'kubernetes-nodes'
-  #   static_configs:
-  #     - targets: ['192.168.49.2:30250']
-  #   scheme: https
-  #   tls_config:
-  #     insecure_skip_verify: true
-  #   metrics_path: '/metrics'
-  #   scrape_interval: 30s
-
-  # cAdvisor metrics (Máquina 1) - COMENTADO para simplicidade
-  # - job_name: 'kubernetes-cadvisor'
-  #   static_configs:
-  #     - targets: ['192.168.49.2:30194']
-  #   metrics_path: '/metrics'
-  #   scrape_interval: 30s
+  # Kubelet / cAdvisor via API server proxy (per-node -> per-pod/container CPU metrics)
+  # Requires a running 'kubectl proxy' on Máquina 2 that exposes the cluster API to the host,
+  # e.g.:
+  #   kubectl proxy --address="0.0.0.0" --accept-hosts="^.*$" --port=8001
+  # Prometheus will then scrape the cAdvisor metrics for each node through the API server proxy.
+  - job_name: "kubelet-cadvisor"
+    kubernetes_sd_configs:
+      - api_server: "http://host.docker.internal:8001"
+        role: node
+    scheme: http
+    # We'll set node-specific proxy paths using __metrics_path__ so targets become:
+    #  http://host.docker.internal:8001/api/v1/nodes/<node-name>/proxy/metrics/cadvisor
+    metrics_path: /metrics/cadvisor
+    relabel_configs:
+      # Point the scrape to the proxy base address
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: __address__
+        replacement: host.docker.internal:8001
+      # Build the node-specific proxy path
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: "(.+)"
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+      # Preserve the node name as a label so queries can join pod<->node information
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+    scrape_interval: 15s
 
 # Configuração de alerting (opcional)
 alerting:
@@ -76,6 +80,3 @@ alerting:
     - static_configs:
         - targets: []
           # - alertmanager:9093
-
-
-

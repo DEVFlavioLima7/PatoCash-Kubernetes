@@ -1,27 +1,38 @@
-# Alerting Rules para PatoCash - Máquina 2
-# Baseado nas regras funcionais do cluster Kubernetes
+# Alerting Rules ESSENCIAIS para Demonstração de Tolerância a Falhas
+# APENAS os alertas necessários para a demo
 groups:
-  - name: patocast_hpa_demo_alerts
+  - name: patocash_demo_alerts
+    interval: 15s
     rules:
-      # Alerting rules - para demonstração
-      - alert: PatoCash_HighCPU
-        expr: patocast:avg_cpu_usage > 0.5
-        for: 10s
+      # Para demonstrar HPA - CPU alta acionando escalonamento
+      - alert: PatoCashHPATriggered
+        expr: patocash:backend_total_cpu_percent > 50
+        for: 30s
         labels:
-          severity: demo
-          component: backend
-          service: patocast
+          severity: info
+          demo: hpa-scaling
         annotations:
-          summary: "PatoCash Backend - Alto uso de CPU detectado (Demonstração HPA)"
-          description: "O uso médio de CPU dos pods do backend PatoCash está em {{ $value | humanize }}%, acionando o HPA para escalonamento automático. Este alerta é parte da demonstração do sistema de auto-scaling."
+          summary: "🚀 HPA acionado - CPU alta detectada"
+          description: "CPU total do backend está em {{ $value }}%. HPA deve escalonar pods automaticamente."
 
-      - alert: PatoCash_Scaling
-        expr: patocast:hpa_current_replicas > 2
+      # Para demonstrar HPA - Escalonamento ativo
+      - alert: PatoCashHPAScaling
+        expr: patocash:hpa_current_replicas > 2
+        for: 15s
+        labels:
+          severity: info
+          demo: hpa-scaling
+        annotations:
+          summary: "📈 HPA escalonando - {{ $value }} replicas ativas"
+          description: "HPA aumentou o número de replicas para {{ $value }} devido ao aumento de CPU."
+
+      # Para demonstrar Auto-healing - Pod sendo recriado
+      - alert: PatoCashPodCountChanged
+        expr: changes(patocash:backend_pod_count[2m]) != 0
         for: 10s
         labels:
-          severity: demo
-          component: hpa
-          service: patocast
+          severity: info
+          demo: auto-healing
         annotations:
-          summary: "PatoCash Backend - Escalonamento automático ativo (Demonstração HPA)"
-          description: "O HPA escalonou o backend PatoCash para {{ $value }} réplicas devido ao aumento da demanda. Demonstração do sistema de auto-scaling funcionando corretamente."
+          summary: "🔄 Auto-healing detectado - mudança no número de pods"
+          description: "Número de pods backend mudou para {{ $value }}. Kubernetes está fazendo auto-healing."

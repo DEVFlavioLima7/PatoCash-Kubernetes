@@ -1,41 +1,65 @@
-# Recording Rules para PatoCash - Máquina 2
-# Baseado nas regras funcionais do cluster Kubernetes
+# Recording Rules para Demonstração COMPLETA de Tolerância a Falhas
+# Inclui todas as métricas solicitadas: pods ativos, CPU, estado dos pods, HPA
 groups:
-  - name: patocast_hpa_demo
+  - name: patocash_metricas_tempo_real
     interval: 5s
     rules:
-      # Recording rules - queries pré-calculadas
-      - record: patocast:cpu_usage_percent
-        expr: avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100) by (instance)
+      # 1. NÚMERO DE PODS ATIVOS
+      - record: patocash:backend_pod_count
+        expr: count(count by (pod) (container_cpu_usage_seconds_total{pod=~"patocast-backend.*", container!="POD"}))
         labels:
-          description: "Porcentagem de uso de CPU por instância do backend PatoCash"
-
-      - record: patocast:pod_count
-        expr: count(kube_pod_info{pod=~"patocast-backend.*"})
+          metric_type: "pod_count"
+          demo: "auto-healing"
+          
+      # 2. USO DE CPU POR POD
+      - record: patocash:backend_cpu_percent_per_pod
+        expr: sum by (pod, namespace) (rate(container_cpu_usage_seconds_total{pod=~"patocast-backend.*", container!="POD"}[1m])) * 100
         labels:
-          description: "Número total de pods do backend PatoCash em execução"
+          metric_type: "cpu_usage"
+          demo: "hpa-cpu"
+          
+      # 3. USO DE CPU TOTAL
+      - record: patocash:backend_total_cpu_percent
+        expr: sum(patocash:backend_cpu_percent_per_pod)
+        labels:
+          metric_type: "cpu_total"
+          demo: "hpa-cpu"
 
-      - record: patocast:hpa_current_replicas
+      # 4. ESTADO DOS PODS (Running, Failed, Pending)
+      - record: patocash:backend_pods_running
+        expr: count(kube_pod_status_phase{pod=~"patocast-backend.*", phase="Running"})
+        labels:
+          metric_type: "pod_status"
+          phase: "running"
+          
+      - record: patocash:backend_pods_pending
+        expr: count(kube_pod_status_phase{pod=~"patocast-backend.*", phase="Pending"})
+        labels:
+          metric_type: "pod_status"
+          phase: "pending"
+          
+      - record: patocash:backend_pods_failed
+        expr: count(kube_pod_status_phase{pod=~"patocast-backend.*", phase="Failed"})
+        labels:
+          metric_type: "pod_status"
+          phase: "failed"
+
+      # 5. AÇÕES DO HPA (scaling)
+      - record: patocash:hpa_current_replicas
         expr: kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler="patocast-backend-hpa"}
         labels:
-          description: "Número atual de réplicas configuradas pelo HPA do backend PatoCash"
-
-      - record: patocast:hpa_desired_replicas
+          metric_type: "hpa_scaling"
+          demo: "hpa-scaling"
+          
+      - record: patocash:hpa_desired_replicas
         expr: kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler="patocast-backend-hpa"}
         labels:
-          description: "Número desejado de réplicas pelo HPA do backend PatoCash"
-
-      - record: patocast:cpu_above_threshold
-        expr: avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100) by (instance)
+          metric_type: "hpa_scaling"
+          demo: "hpa-scaling"
+          
+      # 6. HISTÓRICO DE ESCALONAMENTO (quando HPA age)
+      - record: patocash:hpa_scaling_active
+        expr: (patocash:hpa_desired_replicas > patocash:hpa_current_replicas) or (patocash:hpa_current_replicas > 2)
         labels:
-          description: "Uso de CPU por instância do backend PatoCash (para comparação com threshold)"
-
-      - record: patocast:replica_changes
-        expr: delta(kube_deployment_status_replicas_available{deployment="patocast-backend"}[1m])
-        labels:
-          description: "Mudanças no número de réplicas disponíveis do deployment backend no último minuto"
-
-      - record: patocast:avg_cpu_usage
-        expr: avg(rate(process_cpu_seconds_total{app="patocast-backend"}[1m]) * 100)
-        labels:
-          description: "Uso médio de CPU do backend PatoCash"
+          metric_type: "hpa_action"
+          demo: "hpa-scaling"

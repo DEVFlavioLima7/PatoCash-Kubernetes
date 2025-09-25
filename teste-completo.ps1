@@ -107,22 +107,18 @@ function Get-EnvironmentStatus {
     $minikubeRunning = (minikube status 2>$null) -match "Running"
     $appDeployed = (kubectl get deployment patocast-backend 2>$null) -and (kubectl get hpa patocast-backend-hpa 2>$null)
     
-    # Verificar se Prometheus está deployado
-    $prometheusDeployed = kubectl get deployment prometheus -n monitoring 2>$null
-    
     $imagesBuilt = $false
     if ($minikubeRunning) {
         minikube docker-env --shell powershell | Invoke-Expression 2>$null
         $imagesBuilt = (docker images patocast-backend:latest -q 2>$null) -and (docker images patocast-frontend:latest -q 2>$null)
     }
     
-    Write-Host "Status: Minikube=$minikubeRunning | App=$appDeployed | Images=$imagesBuilt | Prometheus=$([bool]$prometheusDeployed)" -ForegroundColor Cyan
+    Write-Host "Status: Minikube=$minikubeRunning | App=$appDeployed | Images=$imagesBuilt)" -ForegroundColor Cyan
     
     return @{
         MinikubeRunning = $minikubeRunning
         AppDeployed = $appDeployed
         ImagesBuilt = $imagesBuilt
-        PrometheusDeployed = [bool]$prometheusDeployed
     }
 }
 
@@ -260,7 +256,6 @@ function Deploy-Application {
         $backendReady = kubectl get pods -l app=patocast-backend --field-selector=status.phase=Running 2>$null
         $frontendReady = kubectl get pods -l app=patocast-frontend --field-selector=status.phase=Running 2>$null
         $postgresReady = kubectl get pods -l app=postgres --field-selector=status.phase=Running 2>$null
-        $prometheusReady = kubectl get pods -n monitoring -l app=prometheus --field-selector=status.phase=Running 2>$null
 
         if ($backendReady -and $frontendReady -and $postgresReady -and $prometheusReady) {
             Write-Host "Deploy concluido!" -ForegroundColor Green
@@ -339,7 +334,13 @@ function Setup-ApplicationAccess {
     $services += @{ Name = "Frontend"; Service = "patocast-frontend-service"; Port = 3000 }
     $services += @{ Name = "Backend"; Service = "patocast-backend-service"; Port = 5000 }
     $services += @{ Name = "PostgreSQL"; Service = "postgres-service"; Port = 5432 }
-    $services += @{ Name = "Prometheus"; Service = "prometheus-service"; Port = 9090; Namespace = "monitoring" }
+    $services += @{ Name = "kube-state-metrics"; Service = "kube-state-metrics"; Port = 8080; Namespace = "kube-system" }
+    
+    # Iniciar kubectl proxy para cAdvisor (necessário para Prometheus Máquina 2)
+    Write-Host "Iniciando kubectl proxy para cAdvisor..." -ForegroundColor Yellow
+    Start-Job -Name "kubectl-proxy" -ScriptBlock {
+        kubectl proxy --address='0.0.0.0' --accept-hosts='^.*$' --port=8001
+    }
     
     foreach ($svc in $services) {
         $cmd = if ($svc.Namespace) { 
@@ -357,6 +358,7 @@ function Setup-ApplicationAccess {
     Start-Sleep -Seconds 5
     
     Write-Host "`nURLs DISPONIVEIS:" -ForegroundColor Green
+    Write-Host "kubectl proxy (cAdvisor): http://${localIP}:8001/api/v1/nodes" -ForegroundColor Cyan
     foreach ($svc in $services) {
         $protocol = if ($svc.Name -eq "PostgreSQL") { "postgresql" } else { "http" }
         Write-Host "$($svc.Name): ${protocol}://${localIP}:$($svc.Port)" -ForegroundColor Cyan
@@ -425,7 +427,7 @@ try {
     }
     
     # 8. Deploy sempre após limpar ambiente ou se ForcarDeploy estiver ativo
-    if (!$status.AppDeployed -or !$status.PrometheusDeployed -or $LimparTudo -or $ForcarReconstrucao -or $ForcarDeploy) {
+    if (!$status.AppDeployed -or -or $LimparTudo -or $ForcarReconstrucao -or $ForcarDeploy) {
         Write-Host "`n6. Executando deploy..." -ForegroundColor Cyan
         Deploy-Application
     }
@@ -445,6 +447,15 @@ try {
         Write-Host "Logs: kubectl logs -l app=patocast-backend" -ForegroundColor Cyan
         Write-Host "Prometheus: kubectl logs -l app=prometheus -n monitoring" -ForegroundColor Cyan
         Write-Host "Parar port-forwards: Get-Job | Stop-Job" -ForegroundColor Cyan
+        Write-Host "`nPROMETHEUS MAQUINA 2:" -ForegroundColor Green
+        Write-Host "UI: http://${localIP}:9090" -ForegroundColor Cyan
+        Write-Host "Targets: http://${localIP}:9090/targets" -ForegroundColor Cyan
+        Write-Host "Rules: http://${localIP}:9090/rules" -ForegroundColor Cyan
+        Write-Host "cAdvisor Test: curl http://${localIP}:8001/api/v1/nodes/minikube/proxy/metrics/cadvisor" -ForegroundColor Cyan
+        Write-Host "`nQUERIES CADVISOR (cole no Prometheus):" -ForegroundColor Green
+        Write-Host "CPU Backend: sum by (pod) (rate(container_cpu_usage_seconds_total{pod=~`"patocast-backend.*`",container!=`"POD`"}[1m]))*100" -ForegroundColor Gray
+        Write-Host "Memory Backend: sum by (pod) (container_memory_usage_bytes{pod=~`"patocast-backend.*`",container!=`"POD`"})/1024/1024" -ForegroundColor Gray
+        Write-Host "Replicas: count(count by (pod) (container_cpu_usage_seconds_total{pod=~`"patocast-backend.*`",container!=`"POD`"}))" -ForegroundColor Gray
         
         if (!$SemPrompt) {
             Write-Host "`nManter port-forwards? (Y/n): " -NoNewline -ForegroundColor Cyan

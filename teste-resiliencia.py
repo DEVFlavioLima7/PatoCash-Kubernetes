@@ -184,7 +184,7 @@ class PatoCashStressTester:
                 elapsed = int(time.time() - self.start_time) if self.start_time else 0
                 
                 # Limpar tela e mostrar status
-                subprocess.run("clear", shell=True)  # Linux/Mac
+                subprocess.run("cls", shell=True)  # Windows
                 # subprocess.run("cls", shell=True)  # Windows
                 
                 print(f"{'='*60}")
