@@ -46,30 +46,20 @@ scrape_configs:
           - "host.docker.internal:8080"
     scrape_interval: 3s
 
-  # Kubelet / cAdvisor via API server proxy (per-node -> per-pod/container CPU metrics)
-  # Requires a running 'kubectl proxy' on Máquina 2 that exposes the cluster API to the host,
-  # e.g.:
-  #   kubectl proxy --address="0.0.0.0" --accept-hosts="^.*$" --port=8001
-  # Prometheus will then scrape the cAdvisor metrics for each node through the API server proxy.
   - job_name: "kubelet-cadvisor"
     kubernetes_sd_configs:
       - api_server: "http://host.docker.internal:8001"
         role: node
     scheme: http
-    # We'll set node-specific proxy paths using __metrics_path__ so targets become:
-    #  http://host.docker.internal:8001/api/v1/nodes/<node-name>/proxy/metrics/cadvisor
     metrics_path: /metrics/cadvisor
     relabel_configs:
-      # Point the scrape to the proxy base address
       - source_labels: [__meta_kubernetes_node_name]
         target_label: __address__
         replacement: host.docker.internal:8001
-      # Build the node-specific proxy path
       - source_labels: [__meta_kubernetes_node_name]
         regex: "(.+)"
         target_label: __metrics_path__
         replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
-      # Preserve the node name as a label so queries can join pod<->node information
       - source_labels: [__meta_kubernetes_node_name]
         target_label: node
     scrape_interval: 15s

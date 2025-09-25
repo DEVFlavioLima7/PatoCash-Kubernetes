@@ -427,7 +427,7 @@ try {
     }
     
     # 8. Deploy sempre após limpar ambiente ou se ForcarDeploy estiver ativo
-    if (!$status.AppDeployed -or -or $LimparTudo -or $ForcarReconstrucao -or $ForcarDeploy) {
+    if (!$status.AppDeployed -or $LimparTudo -or $ForcarReconstrucao -or $ForcarDeploy) {
         Write-Host "`n6. Executando deploy..." -ForegroundColor Cyan
         Deploy-Application
     }
